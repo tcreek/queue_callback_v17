@@ -115,4 +115,3 @@ See <https://www.gnu.org/licenses/gpl-3.0.html>.
 ## Credits
 
 Built on the shoulders of **Asterisk** and **FreePBX**.  
-Queue Callback logic and intelligent processor by **[Your Name/Org]**.  
