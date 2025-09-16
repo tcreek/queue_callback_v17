@@ -1,0 +1,70 @@
+#!/usr/bin/php -q
+<?php
+/**
+ * queuecallback-result.agi
+ * Marks a callback request as completed when the customer leg answers
+ * Inputs:
+ *  - CALLBACK_ID (channel var, set by callfile as __CALLBACK_ID)
+ *  - optional arg[1] = "complete" (ignored; present for clarity)
+ */
+
+require_once('/etc/freepbx.conf');
+
+try {
+    $fpbx = class_exists('\FreePBX')
+        ? (method_exists('\FreePBX','Create') ? \FreePBX::Create() : \FreePBX::create())
+        : null;
+    if (!$fpbx) { throw new Exception('FreePBX bootstrap failed'); }
+    /** @var PDO $db */
+    $db = $fpbx->Database;
+} catch (Throwable $e) {
+    // Don't break the call; just log to Asterisk verbose and exit
+    fwrite(STDERR, "AGI RESULT: Bootstrap error: ".$e->getMessage()."\n");
+    exit(0);
+}
+
+/* ---------- AGI helpers ---------- */
+function agi_read_env(): array {
+    $env = [];
+    while (($line = fgets(STDIN)) !== false) {
+        $line = rtrim($line);
+        if ($line === '') break;
+        $parts = explode(':', $line, 2);
+        if (count($parts) === 2) { $env[trim($parts[0])] = trim($parts[1]); }
+    }
+    return $env;
+}
+function agi_cmd(string $cmd): string {
+    fwrite(STDOUT, $cmd . "\n"); fflush(STDOUT);
+    $res = fgets(STDIN);
+    return $res === false ? '' : trim($res);
+}
+function agi_getvar(string $name): string {
+    $res = agi_cmd("GET VARIABLE $name");
+    if (preg_match('/result=1\s*\((.*)\)/', $res, $m)) { return $m[1]; }
+    return '';
+}
+function agi_verbose(string $msg, int $lvl=1): void {
+    agi_cmd('VERBOSE "' . addcslashes($msg, "\"\\") . "\" $lvl");
+}
+
+/* ---------- main ---------- */
+$env = agi_read_env();
+$id  = agi_getvar('CALLBACK_ID');
+if ($id === '') {
+    agi_verbose("QCB RESULT: no CALLBACK_ID, nothing to mark");
+    exit(0);
+}
+
+try {
+    $sql = "UPDATE queuecallback_requests
+            SET status='completed', time_processed=?
+            WHERE id=? AND status IN ('pending','processing')";
+    $st  = $db->prepare($sql);
+    $st->execute([time(), $id]);
+    agi_verbose("QCB RESULT: marked id $id completed");
+} catch (Throwable $e) {
+    agi_verbose("QCB RESULT: DB error: ".$e->getMessage());
+}
+
+exit(0);

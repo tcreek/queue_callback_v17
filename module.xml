@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<module>
+  <rawname>qcallback</rawname>
+  <name>Queue Callback</name>
+  <version>17.0.1beta1</version>
+  <publisher>Community</publisher>
+  <license>GPLv3+</license>
+  <category>Applications</category>
+  <menuitems>
+    <qcallback needsenginedb="yes">Queue Callback</qcallback>
+  </menuitems>
+  <depends>
+    <module>framework ge 14.0.0</module>
+  </depends>
+  <description>
+    Provides queue callback functionality to a Queue.
+  </description>
+  <more-info>https://example.com/</more-info>
+  <changelog>
+    * 17.0.1 Initial release
+  </changelog>
+  <files>
+    <file>Qcallback.class.php</file>
+    <file>functions.inc.php</file>
+    <file>page.qcallback.php</file>
+    <file>page.qcallback_tab.php</file>
+    <file>hooks.php</file>
+    <file>install.php</file>
+    <file>uninstall.php</file>
+    <file>agi-bin/queuecallback-store.agi</file>
+    <file>agi-bin/queuecallback-check.agi</file>
+    <file>agi-bin/queuecallback-complete.agi</file>
+    <file>agi-bin/queuecallback-result.agi</file>
+    <file>intelligent_callback_processor.php</file>
+    <file>views/callback_config.php</file>
+    <file>views/callback_config_standalone.php</file>
+    <file>views/callback_overview.php</file>
+    <file>views/queue_callbacks.php</file>
+    <file>views/bootnav.php</file>
+    <file>views/cron.php</file>
+    <file>sounds/en/custom/confirm_number.wav</file>
+  </files>
+</module>
+

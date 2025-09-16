@@ -1,0 +1,66 @@
+#!/usr/bin/php -q
+<?php
+/**
+ * queuecallback-complete.agi
+ * Uses FreePBX PDO (no root creds).
+ * Marks the matching request as 'completed' on answer.
+ *
+ * Requires the channel to carry:
+ *   __CALLBACK_ID=<id from queuecallback_requests>
+ */
+
+require_once('/etc/freepbx.conf');
+
+/* Bootstrap FreePBX + PDO */
+try {
+    if (!class_exists('\FreePBX')) {
+        throw new Exception('FreePBX class not found');
+    }
+    $fpbx = method_exists('\FreePBX','Create') ? \FreePBX::Create() : \FreePBX::create();
+    /** @var PDO $db */
+    $db = $fpbx->Database;
+} catch (Throwable $e) {
+    agi_verbose('QCB COMPLETE: bootstrap error: '.$e->getMessage());
+    exit(0);
+}
+
+/* --- AGI helpers --- */
+function agi_read_env(): array {
+    $env = [];
+    while (($l = fgets(STDIN)) !== false) {
+        $l = rtrim($l);
+        if ($l === '') break;
+        $p = strpos($l, ':');
+        if ($p !== false) {
+            $env[trim(substr($l, 0, $p))] = trim(substr($l, $p + 1));
+        }
+    }
+    return $env;
+}
+function agi_cmd(string $cmd): string { fwrite(STDOUT,$cmd."\n"); fflush(STDOUT); $r=fgets(STDIN); return $r===false?'':trim($r); }
+function agi_getvar(string $name): string { $r=agi_cmd("GET VARIABLE $name"); return (preg_match('/result=1\s*\((.*)\)/',$r,$m))?$m[1]:''; }
+function agi_verbose(string $msg,int $lvl=1): void { agi_cmd('VERBOSE "'.addcslashes($msg,"\"\\")."\" $lvl"); }
+
+/* --- main --- */
+$env = agi_read_env();
+$agi_uniqueid = $env['agi_uniqueid'] ?? '';
+
+$cb_id = agi_getvar('CALLBACK_ID');        // set by the intelligent processor via callfile SetVar
+if ($cb_id === '') {
+    agi_verbose('QCB COMPLETE: no CALLBACK_ID on channel; nothing to do');
+    exit(0);
+}
+
+try {
+    $st = $db->prepare("UPDATE queuecallback_requests
+                           SET status='completed',
+                               time_processed=?,
+                               uniqueid=COALESCE(NULLIF(uniqueid,''), ?)
+                         WHERE id=? AND status IN ('pending','processing')");
+    $st->execute([time(), $agi_uniqueid, $cb_id]);
+    agi_verbose("QCB COMPLETE: marked callback id $cb_id as completed");
+} catch (Throwable $e) {
+    agi_verbose('QCB COMPLETE: DB update error: '.$e->getMessage());
+}
+
+exit(0);
