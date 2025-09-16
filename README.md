@@ -73,7 +73,10 @@ This module will function on any FreePBX-based system, including:
   Pressing **1 to confirm the callback number** can be detected **before** the number announcement finishes.  
 
 - **CallerID update**  
-  CallerID is not yet updated to **the original caller’s number** when the call re-enters the queue.  
+  CallerID is not yet updated to **the original caller’s number** when the call re-enters the queue.
+
+  **Agent Call first failing**
+  Variable not correctly being passed to second leg of call
 
 ---
 
