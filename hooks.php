@@ -1,5 +1,27 @@
 <?php
 /**
+ * Queue Callback Module for FreePBX
+ *
+ * Copyright (C) 2026 Trent Creekmore 
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+?>
+
+<?php
+/**
  * Queue Callback Module Hooks
  * Integrates callback processing with FreePBX maintenance system
  */
@@ -19,7 +41,7 @@ function queuecallback_hook_maintenance() {
         $config_stmt = $db->prepare($config_sql);
         $config_stmt->execute();
         $config = $config_stmt->fetch(PDO::FETCH_ASSOC);
-        $retry_interval = ($config['processing_interval'] ?? 5) * 60;
+        $retry_interval = $config['processing_interval'] ?? 30;
         
         // Find callbacks ready for processing based on database interval
         $sql = "SELECT * FROM queuecallback_requests 

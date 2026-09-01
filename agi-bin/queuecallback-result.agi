@@ -1,70 +1,93 @@
+<?php
+/**
+ * Queue Callback Module for FreePBX
+ *
+ * Copyright (C) 2026 Trent Creekmore 
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+?>
+
 #!/usr/bin/php -q
 <?php
 /**
  * queuecallback-result.agi
- * Marks a callback request as completed when the customer leg answers
- * Inputs:
- *  - CALLBACK_ID (channel var, set by callfile as __CALLBACK_ID)
- *  - optional arg[1] = "complete" (ignored; present for clarity)
+ *
+ * Alias for queuecallback-complete.agi — kept for backwards compatibility.
+ * Marks a callback request as completed when called from either leg.
  */
 
 require_once('/etc/freepbx.conf');
 
 try {
-    $fpbx = class_exists('\FreePBX')
-        ? (method_exists('\FreePBX','Create') ? \FreePBX::Create() : \FreePBX::create())
-        : null;
-    if (!$fpbx) { throw new Exception('FreePBX bootstrap failed'); }
-    /** @var PDO $db */
-    $db = $fpbx->Database;
-} catch (Throwable $e) {
-    // Don't break the call; just log to Asterisk verbose and exit
-    fwrite(STDERR, "AGI RESULT: Bootstrap error: ".$e->getMessage()."\n");
+    $fpbx = \FreePBX::Create();
+    $db   = $fpbx->Database;
+} catch (\Throwable $e) {
+    // Drain AGI env then exit silently
+    while (($l = fgets(STDIN)) !== false) { if (rtrim($l) === '') { break; } }
     exit(0);
 }
 
-/* ---------- AGI helpers ---------- */
 function agi_read_env(): array {
     $env = [];
     while (($line = fgets(STDIN)) !== false) {
         $line = rtrim($line);
-        if ($line === '') break;
-        $parts = explode(':', $line, 2);
-        if (count($parts) === 2) { $env[trim($parts[0])] = trim($parts[1]); }
+        if ($line === '') { break; }
+        $pos = strpos($line, ':');
+        if ($pos !== false) {
+            $env[trim(substr($line, 0, $pos))] = trim(substr($line, $pos + 1));
+        }
     }
     return $env;
 }
 function agi_cmd(string $cmd): string {
     fwrite(STDOUT, $cmd . "\n"); fflush(STDOUT);
-    $res = fgets(STDIN);
-    return $res === false ? '' : trim($res);
+    $r = fgets(STDIN); return ($r === false) ? '' : trim($r);
 }
 function agi_getvar(string $name): string {
-    $res = agi_cmd("GET VARIABLE $name");
-    if (preg_match('/result=1\s*\((.*)\)/', $res, $m)) { return $m[1]; }
-    return '';
+    $r = agi_cmd("GET VARIABLE $name");
+    return preg_match('/result=1\s*\(([^)]*)\)/', $r, $m) ? $m[1] : '';
 }
-function agi_verbose(string $msg, int $lvl=1): void {
-    agi_cmd('VERBOSE "' . addcslashes($msg, "\"\\") . "\" $lvl");
+function agi_verbose(string $msg, int $lvl = 1): void {
+    agi_cmd('VERBOSE "' . addcslashes($msg, '"\\') . "\" $lvl");
 }
 
-/* ---------- main ---------- */
-$env = agi_read_env();
-$id  = agi_getvar('CALLBACK_ID');
-if ($id === '') {
-    agi_verbose("QCB RESULT: no CALLBACK_ID, nothing to mark");
+$env  = agi_read_env();
+$uniqueid = $env['agi_uniqueid'] ?? '';
+
+$cb_id = agi_getvar('CALLBACK_ID');
+if ($cb_id === '') { $cb_id = agi_getvar('__CALLBACK_ID'); }
+
+if ($cb_id === '' || !ctype_digit($cb_id)) {
+    agi_verbose('QCB RESULT: no valid CALLBACK_ID — nothing to mark');
     exit(0);
 }
 
 try {
-    $sql = "UPDATE queuecallback_requests
-            SET status='completed', time_processed=?
-            WHERE id=? AND status IN ('pending','processing')";
-    $st  = $db->prepare($sql);
-    $st->execute([time(), $id]);
-    agi_verbose("QCB RESULT: marked id $id completed");
-} catch (Throwable $e) {
-    agi_verbose("QCB RESULT: DB error: ".$e->getMessage());
+    $st = $db->prepare(
+        "UPDATE queuecallback_requests
+            SET status         = 'completed',
+                time_processed = ?,
+                uniqueid       = COALESCE(NULLIF(uniqueid, ''), ?)
+          WHERE id = ?
+            AND status IN ('pending','processing')"
+    );
+    $st->execute([time(), $uniqueid, (int)$cb_id]);
+    agi_verbose("QCB RESULT: marked callback id $cb_id as completed");
+} catch (\Throwable $e) {
+    agi_verbose('QCB RESULT: DB error: ' . $e->getMessage());
 }
 
 exit(0);

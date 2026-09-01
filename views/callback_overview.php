@@ -1,4 +1,26 @@
 <?php
+/**
+ * Queue Callback Module for FreePBX
+ *
+ * Copyright (C) 2026 Trent Creekmore 
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+?>
+
+<?php
 // Overview page showing queues with and without callback enabled
 
 // Get all queues
@@ -23,18 +45,6 @@ foreach ($queues as $queue) {
     $queue_id = $queue[0];
     $queue_desc = $queue[1];
     $callback_config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
-    
-    // Helper function to get pending callbacks
-    if (!function_exists('queuecallback_get_pending_requests')) {
-        function queuecallback_get_pending_requests($queue_id = '') {
-            try {
-                return FreePBX::Qcallback()->getPendingCallbackRequests($queue_id);
-            } catch (Exception $e) {
-                error_log("queuecallback_get_pending_requests error: " . $e->getMessage());
-                return [];
-            }
-        }
-    }
     
     // Get pending callback count
     $pending_callbacks = queuecallback_get_pending_requests($queue_id);
@@ -94,7 +104,7 @@ foreach ($queues as $queue) {
                                             </span>
                                         </td>
                                         <td><code><?php echo htmlentities($queue['config']['callback_key']) ?></code></td>
-                                        <td><?php echo $queue['config']['processing_interval'] ?> <?php echo _("min") ?></td>
+                                        <td><?php echo $queue['config']['processing_interval'] ?> <?php echo _("sec") ?></td>
                                         <td>
                                             <?php if ($queue['pending_count'] > 0): ?>
                                                 <span class="badge badge-warning"><?php echo $queue['pending_count'] ?></span>
@@ -211,6 +221,7 @@ foreach ($queues as $queue) {
             </div>
             <div class="panel-body">
                 <ol>
+                    <li><?php echo _("Create a Queue first before using this module to create a callback") ?></li>
                     <li><?php echo _("Click 'Add Callback' to enable callback for a queue") ?></li>
                     <li><?php echo _("Click 'Configure' to set callback options") ?></li>
                     <li><?php echo _("Click 'View' to see pending callbacks") ?></li>

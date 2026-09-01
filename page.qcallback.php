@@ -1,4 +1,26 @@
 <?php
+/**
+ * Queue Callback Module for FreePBX
+ *
+ * Copyright (C) 2026 Trent Creekmore 
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+?>
+
+<?php
 if (!defined('FREEPBX_IS_AUTH')) { die('No direct script access allowed'); }
 
 $request = $_REQUEST;
@@ -18,7 +40,7 @@ if (isset($_REQUEST['action'])) {
                         'enabled' => 1,
                         'announce_id' => null,
                         'callback_key' => '*',
-                        'processing_interval' => 5
+                        'processing_interval' => 30
                     );
                     
                     FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $default_config);
@@ -40,8 +62,17 @@ if (isset($_REQUEST['action'])) {
         case 'remove_callback':
             if ($queue_id) {
                 try {
-                    // Delete callback configuration (this also cancels pending callbacks)
-                    FreePBX::Qcallback()->deleteQueueCallbackConfig($queue_id);
+                    // Disable callback
+                    $config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
+                    $config['enabled'] = 0;
+                    
+                    FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $config);
+                    
+                    // Cancel any pending callbacks
+                    queuecallback_cancel_queue_callbacks($queue_id);
+                    
+                    // Trigger dialplan reload
+                    needReload();
                     
                     header('Content-Type: application/json');
                     echo json_encode(['status' => 'success', 'message' => 'Callback removed from queue ' . $queue_id]);
@@ -117,14 +148,13 @@ if (isset($_REQUEST['action'])) {
                         'enabled' => $_REQUEST['callback_enabled'] ?? 0,
                         'announce_id' => $_REQUEST['callback_announce_id'] ?: null,
                         'callback_key' => $_REQUEST['callback_key'] ?: '*',
-                        'processing_interval' => (int)($_REQUEST['callback_processing_interval'] ?: 5),
+                        'processing_interval' => (int)($_REQUEST['callback_processing_interval'] ?: 30),
                         'max_attempts' => (int)($_REQUEST['callback_max_attempts'] ?: 3),
                         'retry_interval' => (int)($_REQUEST['callback_retry_interval'] ?: 5),
                         'return_message_id' => $_REQUEST['callback_return_message_id'] ?: null,
-                        'confirm_message_id' => null, // Hardcoded to use custom/confirm_number.wav
-                        'callback_started_message_id' => $_REQUEST['callback_started_message_id'] ?: null,
-                        'confirm_number' => 1, // Always enabled (hardcoded)
-                        'alt_number_key' => '2', // Hardcoded to key 2 for different number
+                        'confirm_message_id' => $_REQUEST['callback_confirm_message_id'] ?: null,
+                        'confirm_number' => $_REQUEST['callback_confirm_number'] ?? 1,
+                        'alt_number_key' => $_REQUEST['callback_alt_number_key'] ?: '2',
                         'call_first' => $_REQUEST['callback_call_first'] ?: 'customer'
                     );
                     

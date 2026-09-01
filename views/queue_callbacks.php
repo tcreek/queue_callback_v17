@@ -1,17 +1,27 @@
 <?php
-// View for managing callbacks for a specific queue
+/**
+ * Queue Callback Module for FreePBX
+ *
+ * Copyright (C) 2026 Trent Creekmore 
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+?>
 
-// Helper function to get pending callbacks
-if (!function_exists('queuecallback_get_pending_requests')) {
-    function queuecallback_get_pending_requests($queue_id = '') {
-        try {
-            return FreePBX::Qcallback()->getPendingCallbackRequests($queue_id);
-        } catch (Exception $e) {
-            error_log("queuecallback_get_pending_requests error: " . $e->getMessage());
-            return [];
-        }
-    }
-}
+<?php
+// View for managing callbacks for a specific queue
 
 $queue_id = $queue_id ?? '';
 $callbacks = queuecallback_get_pending_requests($queue_id);
@@ -62,7 +72,7 @@ $callback_config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
                         <dd><?php echo htmlentities($callback_config['callback_key']) ?></dd>
                         
                         <dt><?php echo _("Processing Interval") ?>:</dt>
-                        <dd><?php echo $callback_config['processing_interval'] ?> <?php echo _("minutes") ?></dd>
+                        <dd><?php echo $callback_config['processing_interval'] ?> <?php echo _("seconds") ?></dd>
                     <?php endif; ?>
                 </dl>
             </div>

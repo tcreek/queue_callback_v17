@@ -1,4 +1,26 @@
 <?php
+/**
+ * Queue Callback Module for FreePBX
+ *
+ * Copyright (C) 2026 Trent Creekmore 
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+?>
+
+<?php
 // This file is included in the queues configuration form to add callback options
 
 $callback_enabled = $callback_config['enabled'] ?? 0;
@@ -155,7 +177,7 @@ try {
                     <div class="col-md-9">
                         <div class="input-group">
                             <input type="number" class="form-control" id="callback_processing_interval" name="callback_processing_interval" value="<?php echo $callback_processing_interval ?>" min="1" max="60">
-                            <span class="input-group-addon"><?php echo _("minutes") ?></span>
+                            <span class="input-group-addon"><?php echo _("seconds") ?></span>
                         </div>
                     </div>
                 </div>
@@ -164,7 +186,7 @@ try {
     </div>
     <div class="row">
         <div class="col-md-12">
-            <span id="callback_processing_interval-help" class="help-block fpbx-help-block"><?php echo _("How often the system should process pending callbacks. Lower values provide faster callbacks but increase system load. Default: 5 minutes.") ?></span>
+            <span id="callback_processing_interval-help" class="help-block fpbx-help-block"><?php echo _("How often the system should process pending callbacks, in seconds. Lower values provide faster callbacks but increase system load. Default: 30 seconds.") ?></span>
         </div>
     </div>
 </div>
@@ -196,9 +218,60 @@ try {
     </div>
 </div>
 
-<!-- Note: Confirm Callback Number is now always enabled (hardcoded) -->
+<!-- Number Confirmation -->
+<div class="element-container callback-options" style="<?php echo ($callback_enabled == '1') ? '' : 'display:none;' ?>">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="row">
+                <div class="form-group">
+                    <div class="col-md-3">
+                        <label class="control-label" for="callback_confirm_number"><?php echo _("Confirm Callback Number") ?></label>
+                        <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_confirm_number"></i>
+                    </div>
+                    <div class="col-md-9">
+                        <select class="form-control" id="callback_confirm_number" name="callback_confirm_number">
+                            <option value="1" <?php echo ($callback_config['confirm_number'] ?? 1) == 1 ? 'selected' : '' ?>><?php echo _("Yes - Ask caller to confirm number") ?></option>
+                            <option value="0" <?php echo ($callback_config['confirm_number'] ?? 1) == 0 ? 'selected' : '' ?>><?php echo _("No - Use detected caller ID directly") ?></option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12">
+            <span id="callback_confirm_number-help" class="help-block fpbx-help-block"><?php echo _("When enabled, the system reads back the detected caller ID. Callers hang up to confirm the number is correct, or press a key to enter a different number. When disabled, the system uses the detected caller ID directly.") ?></span>
+        </div>
+    </div>
+</div>
 
-<!-- Note: Different Number Key is hardcoded as key 2 -->
+<!-- Different Number Key (only show when confirm_number is enabled) -->
+<div class="element-container callback-options confirm-keys-options" style="<?php echo ($callback_enabled == '1' && ($callback_config['confirm_number'] ?? 1) == 1) ? '' : 'display:none;' ?>">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="row">
+                <div class="form-group">
+                    <div class="col-md-3">
+                        <label class="control-label" for="callback_alt_number_key"><?php echo _("Different Number Key") ?></label>
+                        <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_alt_number_key"></i>
+                    </div>
+                    <div class="col-md-9">
+                        <select class="form-control" id="callback_alt_number_key" name="callback_alt_number_key" style="width: 80px;">
+                            <?php for ($i = 0; $i <= 9; $i++): ?>
+                                <option value="<?php echo $i ?>" <?php echo ($callback_config['alt_number_key'] ?? '2') == $i ? 'selected' : '' ?>><?php echo $i ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12">
+            <span id="callback_alt_number_key-help" class="help-block fpbx-help-block"><?php echo _("Key callers press if the detected number is incorrect or they want to be called back at a different number.") ?></span>
+        </div>
+    </div>
+</div>
 
 <script>
 $(document).ready(function() {
@@ -206,12 +279,20 @@ $(document).ready(function() {
     function toggleCallbackOptions() {
         if ($('#callback_enabled-yes').is(':checked')) {
             $('.callback-options').show();
+            toggleConfirmKeyOptions();
         } else {
             $('.callback-options').hide();
         }
     }
     
-    // Note: Confirm keys are now hardcoded (1=confirm, 2=different number)
+    // Function to toggle confirm key options visibility
+    function toggleConfirmKeyOptions() {
+        if ($('#callback_confirm_number').val() == '1') {
+            $('.confirm-keys-options').show();
+        } else {
+            $('.confirm-keys-options').hide();
+        }
+    }
     
     // Initial state
     toggleCallbackOptions();
@@ -221,6 +302,8 @@ $(document).ready(function() {
         toggleCallbackOptions();
     });
     
-    // Confirm keys are hardcoded, no dynamic toggling needed
+    $('#callback_confirm_number').change(function() {
+        toggleConfirmKeyOptions();
+    });
 });
 </script>

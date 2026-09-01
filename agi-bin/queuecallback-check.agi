@@ -1,77 +1,90 @@
-#!/usr/bin/php -q
 <?php
 /**
- * queuecallback-check.agi
- * Uses FreePBX PDO (no root creds).
- * Sets:
- *   QUEUE_CALLBACK_ENABLED (1/0)
- *   QUEUE_CALLBACK_KEY (* by default)
+ * Queue Callback Module for FreePBX
+ *
+ * Copyright (C) 2026 Trent Creekmore 
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+?>
+
+#!/usr/bin/php
+<?php
+/**
+ * Queue Callback Check AGI Script
+ * Checks if callback is enabled for the queue
  */
 
-require_once('/etc/freepbx.conf');
+$stdin = fopen('php://stdin', 'r');
+$stdout = fopen('php://stdout', 'w');
 
-/* Bootstrap FreePBX + PDO */
-try {
-    if (!class_exists('\FreePBX')) {
-        throw new Exception('FreePBX class not found');
+// Read initial AGI environment variables from Asterisk
+$agi_vars = array();
+while ($line = fgets($stdin)) {
+    $line = trim($line);
+    if ($line == '') break; // Empty line signals end of environment
+    
+    if (strpos($line, ':') !== false) {
+        list($key, $value) = explode(':', $line, 2);
+        $agi_vars[trim($key)] = trim($value);
     }
-    $fpbx = method_exists('\FreePBX','Create') ? \FreePBX::Create() : \FreePBX::create();
-    /** @var PDO $db */
-    $db = $fpbx->Database;
-} catch (Throwable $e) {
-    agi_setvar('QUEUE_CALLBACK_ENABLED', '0');
-    agi_verbose('QCB CHECK: bootstrap error: '.$e->getMessage());
-    exit(0);
 }
 
-/* --- AGI helpers --- */
-function agi_read_env(): array {
-    $env = [];
-    while (($l = fgets(STDIN)) !== false) {
-        $l = rtrim($l);
-        if ($l === '') break;
-        $p = strpos($l, ':');
-        if ($p !== false) {
-            $env[trim(substr($l, 0, $p))] = trim(substr($l, $p + 1));
+function agi_request($cmd) {
+    global $stdin, $stdout;
+    fputs($stdout, "$cmd\n");
+    fflush($stdout);
+    return trim(fgets($stdin));
+}
+
+try {
+    // Get queue ID from dialplan variable
+    $queue_result = agi_request("GET VARIABLE CALLBACK_QUEUE");
+    preg_match('/result=1 \(([^)]*)\)/', $queue_result, $queue_matches);
+    $queue_id = isset($queue_matches[1]) ? $queue_matches[1] : '';
+    
+    if (empty($queue_id)) {
+        // Try to get from environment or use default
+        $queue_id = $agi_vars['agi_dnid'] ?? '';
+    }
+    
+    if (!empty($queue_id)) {
+        // Check database for callback configuration
+        $pdo = new PDO("mysql:host=localhost;dbname=asterisk", "freepbxuser", "55f88989cd6491e23706671e66750db4");
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        
+        $sql = "SELECT enabled, callback_key FROM queuecallback_config WHERE queue_id = ?";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$queue_id]);
+        $config = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($config && $config['enabled']) {
+            agi_request("SET VARIABLE QUEUE_CALLBACK_ENABLED 1");
+            agi_request("SET VARIABLE QUEUE_CALLBACK_KEY " . ($config['callback_key'] ?: "*"));
+            agi_request("VERBOSE \"Queue $queue_id has callback enabled with key " . ($config['callback_key'] ?: "*") . "\"");
+        } else {
+            agi_request("SET VARIABLE QUEUE_CALLBACK_ENABLED 0");
+            agi_request("VERBOSE \"Queue $queue_id callback is disabled\"");
         }
-    }
-    return $env;
-}
-function agi_cmd(string $cmd): string { fwrite(STDOUT,$cmd."\n"); fflush(STDOUT); $r=fgets(STDIN); return $r===false?'':trim($r); }
-function agi_getvar(string $name): string { $r=agi_cmd("GET VARIABLE $name"); return (preg_match('/result=1\s*\((.*)\)/',$r,$m))?$m[1]:''; }
-function agi_setvar(string $name,string $val): void { $q = preg_match('/\s/',$val)?'"'.addcslashes($val,"\"\\").'"':$val; agi_cmd("SET VARIABLE $name $q"); }
-function agi_verbose(string $msg,int $lvl=1): void { agi_cmd('VERBOSE "'.addcslashes($msg,"\"\\")."\" $lvl"); }
-
-/* --- main --- */
-$env = agi_read_env();
-
-$queue_id = agi_getvar('CALLBACK_QUEUE');
-if ($queue_id === '') $queue_id = agi_getvar('QUEUENAME');
-if ($queue_id === '' && !empty($env['agi_dnid'])) $queue_id = $env['agi_dnid'];
-
-if ($queue_id === '') {
-    agi_setvar('QUEUE_CALLBACK_ENABLED','0');
-    agi_verbose('QCB CHECK: No queue id found');
-    exit(0);
-}
-
-try {
-    $st = $db->prepare("SELECT enabled, callback_key FROM queuecallback_config WHERE queue_id = ? LIMIT 1");
-    $st->execute([$queue_id]);
-    $row = $st->fetch(PDO::FETCH_ASSOC);
-
-    if ($row && (int)$row['enabled'] === 1) {
-        $key = (!empty($row['callback_key']) && preg_match('/^[0-9*#]$/',$row['callback_key'])) ? $row['callback_key'] : '*';
-        agi_setvar('QUEUE_CALLBACK_ENABLED','1');
-        agi_setvar('QUEUE_CALLBACK_KEY',$key);
-        agi_verbose("QCB CHECK: Queue $queue_id enabled with key $key");
     } else {
-        agi_setvar('QUEUE_CALLBACK_ENABLED','0');
-        agi_verbose("QCB CHECK: Queue $queue_id disabled");
+        agi_request("SET VARIABLE QUEUE_CALLBACK_ENABLED 0");
+        agi_request("VERBOSE \"No queue ID found for callback check\"");
     }
-} catch (Throwable $e) {
-    agi_setvar('QUEUE_CALLBACK_ENABLED','0');
-    agi_verbose('QCB CHECK: DB error: '.$e->getMessage());
+    
+} catch (Exception $e) {
+    agi_request("VERBOSE \"Error checking callback config: " . $e->getMessage() . "\"");
+    agi_request("SET VARIABLE QUEUE_CALLBACK_ENABLED 0");
 }
-
-exit(0);
+?>

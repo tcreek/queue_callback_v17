@@ -1,5 +1,27 @@
 <?php
 /**
+ * Queue Callback Module for FreePBX
+ *
+ * Copyright (C) 2026 Trent Creekmore 
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+?>
+
+<?php
+/**
  * GUI hook page for queue callback management
  * This page is displayed when the "Callback" tab is clicked on a queue configuration page
  */
@@ -20,7 +42,7 @@ $callback_config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
 if ($_POST) {
     $enabled = isset($_POST['callback_enabled']) ? 1 : 0;
     $callback_key = $_POST['callback_key'] ?? '*';
-    $processing_interval = (int)($_POST['processing_interval'] ?? 5);
+    $processing_interval = (int)($_POST['processing_interval'] ?? 30);
     $announce_id = $_POST['announce_id'] ?? null;
     $return_message_id = $_POST['return_message_id'] ?? null;
     
@@ -29,14 +51,7 @@ if ($_POST) {
         'callback_key' => $callback_key,
         'processing_interval' => $processing_interval,
         'announce_id' => $announce_id,
-        'return_message_id' => $return_message_id,
-        'max_attempts' => $callback_config['max_attempts'] ?? 3,
-        'retry_interval' => $callback_config['retry_interval'] ?? 5,
-        'confirm_message_id' => null, // Hardcoded
-        'callback_started_message_id' => $callback_config['callback_started_message_id'] ?? null,
-        'confirm_number' => 1, // Hardcoded
-        'alt_number_key' => '2', // Hardcoded
-        'call_first' => $callback_config['call_first'] ?? 'customer'
+        'return_message_id' => $return_message_id
     );
     
     FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $new_config);
@@ -52,7 +67,7 @@ if ($_POST) {
 
 $enabled = !empty($callback_config['enabled']);
 $callback_key = $callback_config['callback_key'] ?? '*';
-$processing_interval = $callback_config['processing_interval'] ?? 5;
+$processing_interval = $callback_config['processing_interval'] ?? 30;
 $announce_id = $callback_config['announce_id'] ?? '';
 $return_message_id = $callback_config['return_message_id'] ?? '';
 ?>
@@ -110,7 +125,7 @@ $return_message_id = $callback_config['return_message_id'] ?? '';
                 </div>
             </div>
             <div class="help-block" id="processing_interval-help">
-                How often (in minutes) to process pending callback requests.
+                How often (in seconds) to process pending callback requests.
             </div>
             
         </div>
@@ -160,18 +175,6 @@ $return_message_id = $callback_config['return_message_id'] ?? '';
     
     <div class="section">
         <?php
-        // Helper function to get pending callbacks
-        if (!function_exists('queuecallback_get_pending_requests')) {
-            function queuecallback_get_pending_requests($queue_id = '') {
-                try {
-                    return FreePBX::Qcallback()->getPendingCallbackRequests($queue_id);
-                } catch (Exception $e) {
-                    error_log("queuecallback_get_pending_requests error: " . $e->getMessage());
-                    return [];
-                }
-            }
-        }
-        
         // Get pending callbacks for this queue
         $pending_callbacks = queuecallback_get_pending_requests($queue_id);
         

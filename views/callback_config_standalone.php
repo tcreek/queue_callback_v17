@@ -1,4 +1,26 @@
 <?php
+/**
+ * Queue Callback Module for FreePBX
+ *
+ * Copyright (C) 2026 Trent Creekmore 
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+?>
+
+<?php
 // Standalone callback configuration page for a specific queue
 
 $queue_id = $queue_id ?? '';
@@ -93,14 +115,14 @@ if (isset($_GET['error'])) {
                         <label class="col-sm-3 control-label">
                             <?php echo _("Processing Interval") ?>
                             <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
-                               title="<?php echo _("How often (in minutes) the system should check for and process pending callback requests. Lower values mean faster callbacks but more system load. Recommended: 5 minutes.") ?>"></i>
+                               title="<?php echo _("How often (in seconds) the system should check for and process pending callback requests. Lower values mean faster callbacks but more system load. Recommended: 30 seconds.") ?>"></i>
                         </label>
                         <div class="col-sm-9">
                             <div class="input-group" style="width: 120px;">
                                 <input type="number" class="form-control" name="callback_processing_interval" 
                                        value="<?php echo $callback_config['processing_interval'] ?>" 
-                                       min="1" max="60">
-                                <span class="input-group-addon"><?php echo _("min") ?></span>
+                                       min="1" max="120">
+                                <span class="input-group-addon"><?php echo _("sec") ?></span>
                             </div>
                         </div>
                     </div>
@@ -151,8 +173,36 @@ if (isset($_GET['error'])) {
                         </div>
                     </div>
                     
-                    <!-- Note: Confirm Callback Number is now always enabled (hardcoded) -->
-                    <!-- Note: Different Number Key is hardcoded as key 2 -->
+                    <div class="form-group">
+                        <label class="col-sm-3 control-label">
+                            <?php echo _("Confirm Callback Number") ?>
+                            <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
+                               title="<?php echo _("When enabled, the system reads back the detected caller ID. Callers hang up to confirm the number is correct, or press a key to enter a different number. When disabled, the system uses the detected caller ID directly.") ?>"></i>
+                        </label>
+                        <div class="col-sm-9">
+                            <select class="form-control" name="callback_confirm_number" id="callback_confirm_number" style="width: 300px;">
+                                <option value="1" <?php echo ($callback_config['confirm_number'] ?? 1) == 1 ? 'selected' : '' ?>><?php echo _("Yes - Ask caller to confirm number") ?></option>
+                                <option value="0" <?php echo ($callback_config['confirm_number'] ?? 1) == 0 ? 'selected' : '' ?>><?php echo _("No - Use detected caller ID directly") ?></option>
+                            </select>
+                        </div>
+                    </div>
+                    
+
+                    
+                    <div class="form-group confirm-keys-group" style="<?php echo ($callback_config['confirm_number'] ?? 1) == 1 ? '' : 'display:none;' ?>">
+                        <label class="col-sm-3 control-label">
+                            <?php echo _("Different Number Key") ?>
+                            <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
+                               title="<?php echo _("Key callers press if the detected number is incorrect or they want to be called back at a different number.") ?>"></i>
+                        </label>
+                        <div class="col-sm-9">
+                            <select class="form-control" name="callback_alt_number_key" style="width: 80px;">
+                                <?php for ($i = 0; $i <= 9; $i++): ?>
+                                    <option value="<?php echo $i ?>" <?php echo ($callback_config['alt_number_key'] ?? '2') == $i ? 'selected' : '' ?>><?php echo $i ?></option>
+                                <?php endfor; ?>
+                            </select>
+                        </div>
+                    </div>
                     
                         </div> <!-- End General Tab -->
                         
@@ -194,20 +244,18 @@ if (isset($_GET['error'])) {
                                 </div>
                             </div>
 
-                            <!-- Number Confirmation is now hardcoded to use custom/confirm_number.wav -->
-
                             <div class="form-group">
                                 <label class="col-sm-3 control-label">
-                                    <?php echo _("Callback Started Message") ?>
+                                    <?php echo _("Number Confirmation") ?>
                                     <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
-                                       title="<?php echo _("Message played to the caller after they successfully request a callback. This confirms their callback request has been received. Example: 'Thank you, we will call you back shortly.' If not set, uses default system message.") ?>"></i>
+                                       title="<?php echo _("Announcement played to confirm the callback number with the caller. Example: 'We will call you back at [number]. If correct, press pound. Otherwise press 2.'") ?>"></i>
                                 </label>
                                 <div class="col-sm-9">
-                                    <select class="form-control" name="callback_started_message_id">
-                                        <option value=""><?php echo _("Default - Thank you for calling") ?></option>
+                                    <select class="form-control" name="callback_confirm_message_id">
+                                        <option value=""><?php echo _("None - Use default prompts") ?></option>
                                         <?php foreach ($recordings as $recording): ?>
                                             <option value="<?php echo htmlentities($recording['id']) ?>" 
-                                                    <?php echo ($callback_config['callback_started_message_id'] ?? '') == $recording['id'] ? 'selected' : '' ?>>
+                                                    <?php echo ($callback_config['confirm_message_id'] ?? '') == $recording['id'] ? 'selected' : '' ?>>
                                                 <?php echo htmlentities($recording['displayname']) ?>
                                             </option>
                                         <?php endforeach; ?>
@@ -298,6 +346,21 @@ $(document).ready(function() {
     // Initialize Bootstrap tooltips
     $('[data-toggle="tooltip"]').tooltip();
     
-    // Note: Confirm keys are now hardcoded (1=confirm, 2=different number)
+    // Function to toggle confirm key options visibility
+    function toggleConfirmKeyOptions() {
+        if ($('#callback_confirm_number').val() == '1') {
+            $('.confirm-keys-group').show();
+        } else {
+            $('.confirm-keys-group').hide();
+        }
+    }
+    
+    // Initial state
+    toggleConfirmKeyOptions();
+    
+    // Add event listener
+    $('#callback_confirm_number').change(function() {
+        toggleConfirmKeyOptions();
+    });
 });
 </script>

@@ -7,8 +7,8 @@ Callers can request a callback instead of waiting on hold. The processor only re
 
 ## Status
 
-🚧 **Version 17.0.1 Beta 1**  
-Core logic is functional, but some behaviors still need refinement (see **Known Issues**).
+🚧 **Version 17.0.2 Beta 2**  
+Core logic should be fully functional, but some behaviors still need refinement (see **Known Issues**).
 
 ---
 
@@ -61,22 +61,15 @@ This module will function on any FreePBX-based system, including:
 
 ---
 
-## Known Issues (Beta 1)
+## Known Issues (Beta 2)
 
 - **Return announcement not playing**  
-  The optional return message/recording is not currently played to the customer upon answer in customer-first mode.  
+  The optional return message/recording is not currently played to the customer upon answer in Agent-first mode.  
 
-- **Status not labeled correctly**  
-  Completed/failed statuses aren’t always being set, causing the system to **re-call until max retries** are exhausted.  
 
-- **Early DTMF capture**  
-  Pressing **1 to confirm the callback number** can be detected **before** the number announcement finishes.  
 
-- **CallerID update**  
-  CallerID is not yet updated to **the original caller’s number** when the call re-enters the queue.
 
-  **Agent Call first failing**
-  Variable not correctly being passed to second leg of call
+
 
 ---
 

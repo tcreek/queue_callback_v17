@@ -1,93 +1,110 @@
-#!/usr/bin/php -q
 <?php
 /**
- * queuecallback-store.agi
- * Uses FreePBX PDO (no root creds).
- * Inserts a 'pending' row into queuecallback_requests.
+ * Queue Callback Module for FreePBX
+ *
+ * Copyright (C) 2026 Trent Creekmore 
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+?>
+
+#!/usr/bin/php
+<?php
+/**
+ * Queue Callback Store AGI Script
+ * Stores callback requests in the database
  */
 
-require_once('/etc/freepbx.conf');
+$stdin = fopen('php://stdin', 'r');
+$stdout = fopen('php://stdout', 'w');
 
-/* Bootstrap FreePBX + PDO */
-try {
-    if (!class_exists('\FreePBX')) {
-        throw new Exception('FreePBX class not found');
+// Read initial AGI environment variables from Asterisk
+$agi_vars = array();
+while ($line = fgets($stdin)) {
+    $line = trim($line);
+    if ($line == '') break; // Empty line signals end of environment
+    
+    if (strpos($line, ':') !== false) {
+        list($key, $value) = explode(':', $line, 2);
+        $agi_vars[trim($key)] = trim($value);
     }
-    $fpbx = method_exists('\FreePBX','Create') ? \FreePBX::Create() : \FreePBX::create();
-    /** @var PDO $db */
-    $db = $fpbx->Database;
-} catch (Throwable $e) {
-    agi_verbose('QCB STORE: bootstrap error: '.$e->getMessage());
-    exit(0);
 }
 
-/* --- AGI helpers --- */
-function agi_read_env(): array {
-    $env = [];
-    while (($l = fgets(STDIN)) !== false) {
-        $l = rtrim($l);
-        if ($l === '') break;
-        $p = strpos($l, ':');
-        if ($p !== false) {
-            $env[trim(substr($l, 0, $p))] = trim(substr($l, $p + 1));
+function agi_request($cmd) {
+    global $stdin, $stdout;
+    fputs($stdout, "$cmd\n");
+    fflush($stdout);
+    return trim(fgets($stdin));
+}
+
+try {
+    // Get caller ID from AGI environment
+    $callerid = isset($agi_vars['agi_callerid']) ? $agi_vars['agi_callerid'] : '';
+    
+    // Get variables set in dialplan
+    $queue_result = agi_request("GET VARIABLE CALLBACK_QUEUE");
+    $number_result = agi_request("GET VARIABLE CALLBACK_NUMBER");
+    
+    // Parse results
+    preg_match('/result=1 \(([^)]*)\)/', $queue_result, $queue_matches);
+    preg_match('/result=1 \(([^)]*)\)/', $number_result, $number_matches);
+    
+    $queue = isset($queue_matches[1]) ? $queue_matches[1] : '';
+    $number = isset($number_matches[1]) ? $number_matches[1] : '';
+    
+    // If no callback number specified, use caller ID as callback number
+    if (empty($number) && !empty($callerid)) {
+        $number = $callerid;
+    }
+    
+    if (!empty($callerid) || !empty($number)) {
+        // Direct database connection
+        $pdo = new PDO("mysql:host=localhost;dbname=asterisk", "freepbxuser", "55f88989cd6491e23706671e66750db4");
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+        // Check for duplicate pending request
+        if (!empty($queue) && !empty($number)) {
+            $dup_check = $pdo->prepare("SELECT id FROM queuecallback_requests
+                                        WHERE queue_id = ? AND callback_number = ? AND status = 'pending'");
+            $dup_check->execute([$queue, $number]);
+            if ($dup_check->fetch()) {
+                agi_request("VERBOSE \"Duplicate callback request ignored for $number in queue $queue\"");
+                exit;
+            }
         }
+        
+        // Get queue position by checking current queue status
+        $queue_position = 1; // Default position
+        $queue_output = shell_exec("asterisk -rx 'queue show $queue' 2>/dev/null");
+        if ($queue_output && preg_match('/W:(\d+)/', $queue_output, $matches)) {
+            $queue_position = (int)$matches[1] + 1; // Their position is current waiting + 1
+        }
+        
+        // Get max_attempts from queue configuration
+        $config_sql = "SELECT max_attempts FROM queuecallback_config WHERE queue_id = ? AND enabled = 1";
+        $config_stmt = $pdo->prepare($config_sql);
+        $config_stmt->execute([$queue]);
+        $config = $config_stmt->fetch(PDO::FETCH_ASSOC);
+        $max_attempts = $config['max_attempts'] ?? 3;
+        
+        $sql = "INSERT INTO queuecallback_requests (queue_id, caller_id, callback_number, status, time_requested, attempts, max_attempts, position) VALUES (?, ?, ?, 'pending', ?, 0, ?, ?)";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$queue, $callerid, $number, time(), $max_attempts, $queue_position]);
     }
-    return $env;
+    
+} catch (Exception $e) {
+    // Silent error handling - don't log in production
 }
-function agi_cmd(string $cmd): string { fwrite(STDOUT,$cmd."\n"); fflush(STDOUT); $r=fgets(STDIN); return $r===false?'':trim($r); }
-function agi_getvar(string $name): string { $r=agi_cmd("GET VARIABLE $name"); return (preg_match('/result=1\s*\((.*)\)/',$r,$m))?$m[1]:''; }
-function agi_verbose(string $msg,int $lvl=1): void { agi_cmd('VERBOSE "'.addcslashes($msg,"\"\\")."\" $lvl"); }
-
-/* Helpers */
-function queue_waiting_count_cli(string $queue): int {
-    $bin = trim((string)@shell_exec('command -v asterisk 2>/dev/null')) ?: '/usr/sbin/asterisk';
-    $out = @shell_exec($bin . ' -rx ' . escapeshellarg('queue show ' . $queue) . ' 2>/dev/null') ?: '';
-    if (preg_match('/\bW:(\d+)\b/', $out, $m)) return (int)$m[1];
-    return 0;
-}
-
-/* --- main --- */
-$env = agi_read_env();
-$agi_uniqueid = $env['agi_uniqueid'] ?? '';
-$clid_num     = $env['agi_calleridnum'] ?? '';
-$clid_name    = $env['agi_calleridname'] ?? ($env['agi_callerid'] ?? '');
-
-$queue = agi_getvar('CALLBACK_QUEUE');
-if ($queue === '') $queue = agi_getvar('QUEUENAME');
-
-$number = agi_getvar('CALLBACK_NUMBER');
-if ($number === '') $number = $clid_num;
-
-if ($queue === '' || $number === '') {
-    agi_verbose("QCB STORE: missing data (queue='$queue' number='$number') - not inserting");
-    exit(0);
-}
-
-try {
-    // pull max_attempts from config
-    $st = $db->prepare("SELECT max_attempts FROM queuecallback_config WHERE queue_id = ? AND enabled = 1");
-    $st->execute([$queue]);
-    $cfg = $st->fetch(PDO::FETCH_ASSOC);
-    $max_attempts = isset($cfg['max_attempts']) ? (int)$cfg['max_attempts'] : 3;
-} catch (Throwable $e) {
-    $max_attempts = 3;
-}
-
-$waiting = queue_waiting_count_cli($queue);
-$position = $waiting + 1;
-
-try {
-    $ins = $db->prepare("
-        INSERT INTO queuecallback_requests
-            (queue_id, caller_id, callback_number, status, time_requested, attempts, max_attempts, position, uniqueid)
-        VALUES
-            (?,       ?,         ?,               'pending', ?,             0,        ?,            ?,        ?)
-    ");
-    $ins->execute([$queue, $clid_num ?: $clid_name, $number, time(), $max_attempts, $position, $agi_uniqueid]);
-    agi_verbose("QCB STORE: inserted request for queue $queue num $number pos $position");
-} catch (Throwable $e) {
-    agi_verbose("QCB STORE: DB insert error: ".$e->getMessage());
-    // Silent failure (no exception up)
-}
-
-exit(0);
+?>

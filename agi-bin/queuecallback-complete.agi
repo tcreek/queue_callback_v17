@@ -1,66 +1,67 @@
-#!/usr/bin/php -q
 <?php
 /**
- * queuecallback-complete.agi
- * Uses FreePBX PDO (no root creds).
- * Marks the matching request as 'completed' on answer.
+ * Queue Callback Module for FreePBX
  *
- * Requires the channel to carry:
- *   __CALLBACK_ID=<id from queuecallback_requests>
+ * Copyright (C) 2026 Trent Creekmore 
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+?>
+
+#!/usr/bin/php
+<?php
+/**
+ * Queue Callback Completion AGI Script
+ * Updates callback status when call completes
  */
 
-require_once('/etc/freepbx.conf');
+$stdin = fopen('php://stdin', 'r');
+$stdout = fopen('php://stdout', 'w');
 
-/* Bootstrap FreePBX + PDO */
-try {
-    if (!class_exists('\FreePBX')) {
-        throw new Exception('FreePBX class not found');
+// Read initial AGI environment variables from Asterisk
+$agi_vars = array();
+while ($line = fgets($stdin)) {
+    $line = trim($line);
+    if ($line == '') break; // Empty line signals end of environment
+    
+    if (strpos($line, ':') !== false) {
+        list($key, $value) = explode(':', $line, 2);
+        $agi_vars[trim($key)] = trim($value);
     }
-    $fpbx = method_exists('\FreePBX','Create') ? \FreePBX::Create() : \FreePBX::create();
-    /** @var PDO $db */
-    $db = $fpbx->Database;
-} catch (Throwable $e) {
-    agi_verbose('QCB COMPLETE: bootstrap error: '.$e->getMessage());
-    exit(0);
 }
 
-/* --- AGI helpers --- */
-function agi_read_env(): array {
-    $env = [];
-    while (($l = fgets(STDIN)) !== false) {
-        $l = rtrim($l);
-        if ($l === '') break;
-        $p = strpos($l, ':');
-        if ($p !== false) {
-            $env[trim(substr($l, 0, $p))] = trim(substr($l, $p + 1));
-        }
-    }
-    return $env;
-}
-function agi_cmd(string $cmd): string { fwrite(STDOUT,$cmd."\n"); fflush(STDOUT); $r=fgets(STDIN); return $r===false?'':trim($r); }
-function agi_getvar(string $name): string { $r=agi_cmd("GET VARIABLE $name"); return (preg_match('/result=1\s*\((.*)\)/',$r,$m))?$m[1]:''; }
-function agi_verbose(string $msg,int $lvl=1): void { agi_cmd('VERBOSE "'.addcslashes($msg,"\"\\")."\" $lvl"); }
-
-/* --- main --- */
-$env = agi_read_env();
-$agi_uniqueid = $env['agi_uniqueid'] ?? '';
-
-$cb_id = agi_getvar('CALLBACK_ID');        // set by the intelligent processor via callfile SetVar
-if ($cb_id === '') {
-    agi_verbose('QCB COMPLETE: no CALLBACK_ID on channel; nothing to do');
-    exit(0);
-}
+// Get arguments passed to AGI
+$callback_id = isset($agi_vars['agi_arg_1']) ? $agi_vars['agi_arg_1'] : '';
+$status = isset($agi_vars['agi_arg_2']) ? $agi_vars['agi_arg_2'] : 'completed';
 
 try {
-    $st = $db->prepare("UPDATE queuecallback_requests
-                           SET status='completed',
-                               time_processed=?,
-                               uniqueid=COALESCE(NULLIF(uniqueid,''), ?)
-                         WHERE id=? AND status IN ('pending','processing')");
-    $st->execute([time(), $agi_uniqueid, $cb_id]);
-    agi_verbose("QCB COMPLETE: marked callback id $cb_id as completed");
-} catch (Throwable $e) {
-    agi_verbose('QCB COMPLETE: DB update error: '.$e->getMessage());
+    if (!empty($callback_id)) {
+        // Direct database connection
+        $pdo = new PDO("mysql:host=localhost;dbname=asterisk", "freepbxuser", "55f88989cd6491e23706671e66750db4");
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        
+        // Update callback status
+        $sql = "UPDATE queuecallback_requests SET status = ?, time_processed = ? WHERE id = ?";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$status, time(), $callback_id]);
+        
+        // Log completion
+        error_log("Callback completed: ID $callback_id - Status: $status");
+    }
+    
+} catch (Exception $e) {
+    error_log("Callback completion error: " . $e->getMessage());
 }
-
-exit(0);
+?>
