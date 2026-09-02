@@ -1,4 +1,4 @@
-# Queue Callback for FreePBX / Asterisk (v17.0.1 Beta 1)
+# Queue Callback for FreePBX / Asterisk
 
 Intelligent queue callback for **FreePBX 17** and **Asterisk 22**.  
 Callers can request a callback instead of waiting on hold. The processor only releases callbacks when it’s the caller’s **turn in queue** and **agents are actually available**.
