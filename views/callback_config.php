@@ -18,9 +18,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-?>
-
-<?php
 // This file is included in the queues configuration form to add callback options
 
 $callback_enabled = $callback_config['enabled'] ?? 0;

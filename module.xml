@@ -27,6 +27,10 @@
     <file>page.qcallback.php</file>
     <file>install.php</file>
     <file>uninstall.php</file>
+    <file>hooks.php</file>
+    <file>page.qcallback_tab.php</file>
+    <file>process_callbacks.php</file>
+    <file>intelligent_callback_processor.php</file>
     <file>agi-bin/queuecallback-store.agi</file>
     <file>agi-bin/queuecallback-check.agi</file>
     <file>agi-bin/queuecallback-complete.agi</file>
@@ -35,10 +39,8 @@
     <file>views/callback_config_standalone.php</file>
     <file>views/callback_overview.php</file>
     <file>views/queue_callbacks.php</file>
-    <file>process_callbacks.php</file>
-    <file>hooks.php</file>
-    <file>page.qcallback_tab.php</file>
-    <file>intelligent_callback_processor.php</file>
+    <file>views/cron.php</file>
+    <file>views/bootnav.php</file>
   </files>
 </module>
 

@@ -18,9 +18,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-?>
-
-<?php
 // Get all queues with callback configurations
 $queues = array();
 if (function_exists('queues_list')) {

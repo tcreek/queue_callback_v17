@@ -18,9 +18,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-?>
-
-<?php
 // Overview page showing queues with and without callback enabled
 
 // Get all queues
