@@ -1,3 +1,4 @@
+#!/usr/bin/php
 <?php
 /**
  * Queue Callback Module for FreePBX
@@ -18,7 +19,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-#!/usr/bin/php
+
 /**
  * Queue Callback Store AGI Script
  * Stores callback requests in the database
@@ -67,20 +68,10 @@ try {
     }
     
     if (!empty($callerid) || !empty($number)) {
-        // Direct database connection
-        $pdo = new PDO("mysql:host=localhost;dbname=asterisk", "freepbxuser", "55f88989cd6491e23706671e66750db4");
+        // Load FreePBX config for database credentials
+        require_once("/etc/freepbx.conf");
+        $pdo = new PDO("mysql:host=" . $amp_conf["AMPDBHOST"] . ";dbname=" . $amp_conf["AMPDBNAME"], $amp_conf["AMPDBUSER"], $amp_conf["AMPDBPASS"]);
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-        // Check for duplicate pending request
-        if (!empty($queue) && !empty($number)) {
-            $dup_check = $pdo->prepare("SELECT id FROM queuecallback_requests
-                                        WHERE queue_id = ? AND callback_number = ? AND status = 'pending'");
-            $dup_check->execute([$queue, $number]);
-            if ($dup_check->fetch()) {
-                agi_request("VERBOSE \"Duplicate callback request ignored for $number in queue $queue\"");
-                exit;
-            }
-        }
         
         // Get queue position by checking current queue status
         $queue_position = 1; // Default position
@@ -104,4 +95,3 @@ try {
 } catch (Exception $e) {
     // Silent error handling - don't log in production
 }
-?>

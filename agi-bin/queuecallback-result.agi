@@ -1,3 +1,4 @@
+#!/usr/bin/php
 <?php
 /**
  * Queue Callback Module for FreePBX
@@ -18,10 +19,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-?>
 
-#!/usr/bin/php -q
-<?php
 /**
  * queuecallback-result.agi
  *
@@ -90,4 +88,3 @@ try {
     agi_verbose('QCB RESULT: DB error: ' . $e->getMessage());
 }
 
-exit(0);

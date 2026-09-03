@@ -1,3 +1,4 @@
+#!/usr/bin/php
 <?php
 /**
  * Queue Callback Module for FreePBX
@@ -18,7 +19,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-#!/usr/bin/php
+
 /**
  * Queue Callback Check AGI Script
  * Checks if callback is enabled for the queue
@@ -58,8 +59,9 @@ try {
     }
     
     if (!empty($queue_id)) {
-        // Check database for callback configuration
-        $pdo = new PDO("mysql:host=localhost;dbname=asterisk", "freepbxuser", "55f88989cd6491e23706671e66750db4");
+        // Load FreePBX config for database credentials
+        require_once("/etc/freepbx.conf");
+        $pdo = new PDO("mysql:host=" . $amp_conf["AMPDBHOST"] . ";dbname=" . $amp_conf["AMPDBNAME"], $amp_conf["AMPDBUSER"], $amp_conf["AMPDBPASS"]);
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         
         $sql = "SELECT enabled, callback_key FROM queuecallback_config WHERE queue_id = ?";
@@ -84,4 +86,3 @@ try {
     agi_request("VERBOSE \"Error checking callback config: " . $e->getMessage() . "\"");
     agi_request("SET VARIABLE QUEUE_CALLBACK_ENABLED 0");
 }
-?>
