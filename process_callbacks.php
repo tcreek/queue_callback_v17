@@ -219,6 +219,8 @@ foreach ($ready_callbacks as $callback) {
 
     $call_file = "/var/spool/asterisk/outgoing/queuecallback_{$callback['id']}.call";
 
+    error_log("DEBUG: Attempting to write call file for callback ID {$callback['id']} to {$call_file} (agent={$agent_extension})");
+
     if (file_put_contents($call_file, $call_file_content)) {
         chmod($call_file, 0777);
         // Change group to asterisk so Asterisk can process the file
@@ -228,10 +230,18 @@ foreach ($ready_callbacks as $callback) {
                       SET status = 'processing', attempts = attempts + 1, last_attempt = ? 
                       WHERE id = ?";
         $update_stmt = $db->prepare($update_sql);
-        $update_stmt->execute([time(), $callback['id']]);
+        try {
+            $update_stmt->execute([time(), $callback['id']]);
+        } catch (PDOException $e) {
+            error_log("ERROR: Database update failed for callback ID {$callback['id']}: " . $e->getMessage());
+        }
             
         // Log the callback processing
         error_log("Callback processed: ID {$callback['id']} - {$callback['callback_number']} -> Queue {$callback['queue_id']}");
+    } else {
+        // Debug: log why the call file couldn't be written
+        $dir = "/var/spool/asterisk/outgoing";
+        error_log("ERROR: Failed to write call file to {$call_file}. Directory exists: " . (is_dir($dir) ? 'YES' : 'NO') . ". Writable: " . (is_writable($dir) ? 'YES' : 'NO'));
     }
 }
 
