@@ -24,6 +24,7 @@ $callback_enabled = $callback_config['enabled'] ?? 0;
 $callback_announce_id = $callback_config['announce_id'] ?? '';
 $callback_key = $callback_config['callback_key'] ?? '*';
 $callback_processing_interval = $callback_config['processing_interval'] ?? 5;
+$callback_outbound_route_id = $callback_config['outbound_route_id'] ?? 1;
 
 // Get available recordings for announcements
 $recordings = array();
@@ -37,6 +38,17 @@ try {
 } catch (Exception $e) {
     // If recordings module has issues, continue without recordings
     $recordings = array();
+}
+
+// Get available outbound routes
+$outbound_routes = array();
+try {
+    $db = FreePBX::Database();
+    $stmt = $db->prepare("SELECT route_id, name FROM outbound_routes ORDER BY name");
+    $stmt->execute();
+    $outbound_routes = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+} catch (Exception $e) {
+    $outbound_routes = array();
 }
 ?>
 
@@ -63,6 +75,34 @@ try {
     <div class="row">
         <div class="col-md-12">
             <span id="callback_enabled-help" class="help-block fpbx-help-block"><?php echo _("Enable callback functionality for this queue. When enabled, callers can press a key to request a callback instead of waiting in the queue.") ?></span>
+        </div>
+    </div>
+</div>
+
+<!-- Outbound Route Selection -->
+<div class="element-container callback-options" style="<?php echo ($callback_enabled == '1') ? '' : 'display:none;' ?>">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="row">
+                <div class="form-group">
+                    <div class="col-md-3">
+                        <label class="control-label" for="callback_outbound_route_id"><?php echo _("Outbound Route") ?></label>
+                        <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_outbound_route_id"></i>
+                    </div>
+                    <div class="col-md-9">
+                        <select class="form-control" id="callback_outbound_route_id" name="callback_outbound_route_id">
+                            <?php foreach ($outbound_routes as $route_id => $route_name): ?>
+                                <option value="<?php echo $route_id; ?>" <?php echo ($callback_outbound_route_id == $route_id) ? 'selected' : '' ?>><?php echo $route_name; ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12">
+            <span id="callback_outbound_route_id-help" class="help-block fpbx-help-block"><?php echo _("Select the outbound route to use for callback calls. This determines which trunk/route is used to call the customer or agent.") ?></span>
         </div>
     </div>
 </div>
@@ -214,6 +254,8 @@ try {
         </div>
     </div>
 </div>
+
+
 
 <!-- Number Confirmation -->
 <div class="element-container callback-options" style="<?php echo ($callback_enabled == '1') ? '' : 'display:none;' ?>">

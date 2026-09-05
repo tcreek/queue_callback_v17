@@ -152,7 +152,8 @@ if (isset($_REQUEST['action'])) {
                         'confirm_message_id' => $_REQUEST['callback_confirm_message_id'] ?: null,
                         'confirm_number' => $_REQUEST['callback_confirm_number'] ?? 1,
                         'alt_number_key' => $_REQUEST['callback_alt_number_key'] ?: '2',
-                        'call_first' => $_REQUEST['callback_call_first'] ?: 'customer'
+                        'call_first' => $_REQUEST['callback_call_first'] ?: 'customer',
+                        'outbound_route_id' => isset($_REQUEST['callback_outbound_route_id']) ? (int)$_REQUEST['callback_outbound_route_id'] : 1
                     );
                     
                     FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $new_config);

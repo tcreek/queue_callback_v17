@@ -290,7 +290,9 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             'return_message_id'   => null,
             'confirm_message_id'  => null,
             'confirm_number'      => 1,
-            'alt_number_key'      => '2'
+            'alt_number_key'      => '2',
+            'call_first'          => 'customer',
+            'outbound_route_id'   => 1
         ];
     }
 
@@ -300,8 +302,8 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         }
 
         $sql = "INSERT INTO queuecallback_config
-                (queue_id, enabled, announce_id, announce_frequency, callback_key, processing_interval, max_attempts, retry_interval, return_message_id, confirm_message_id, confirm_number, alt_number_key, call_first)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                (queue_id, enabled, announce_id, announce_frequency, callback_key, processing_interval, max_attempts, retry_interval, return_message_id, confirm_message_id, confirm_number, alt_number_key, call_first, outbound_route_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON DUPLICATE KEY UPDATE
                 enabled=VALUES(enabled),
                 announce_id=VALUES(announce_id),
@@ -314,7 +316,8 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
                 confirm_message_id=VALUES(confirm_message_id),
                 confirm_number=VALUES(confirm_number),
                 alt_number_key=VALUES(alt_number_key),
-                call_first=VALUES(call_first)";
+                call_first=VALUES(call_first),
+                outbound_route_id=VALUES(outbound_route_id)";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
             $queue_id,
@@ -329,7 +332,8 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             $config['confirm_message_id'] ?? null,
             $config['confirm_number'] ?? 1,
             $config['alt_number_key'] ?? '2',
-            $config['call_first'] ?? 'customer'
+            $config['call_first'] ?? 'customer',
+            $config['outbound_route_id'] ?? 1
         ]);
 
         $this->syncConfigToAsteriskDB($queue_id, $config);

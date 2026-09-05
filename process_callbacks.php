@@ -47,7 +47,7 @@ $db->exec("UPDATE queuecallback_requests SET status = 'cancelled'
            WHERE queue_id = '' OR queue_id IS NULL");
 
 // Find callbacks ready for processing based on per-queue configuration
-$sql = "SELECT r.*, c.retry_interval, c.max_attempts, c.processing_interval, c.call_first
+$sql = "SELECT r.*, c.retry_interval, c.max_attempts, c.processing_interval, c.call_first, c.outbound_route_id
         FROM queuecallback_requests r 
         JOIN queuecallback_config c ON r.queue_id = c.queue_id 
         WHERE r.status = 'pending' 
@@ -98,27 +98,34 @@ foreach ($ready_callbacks as $callback) {
         
         // Parse all queue members and find available ones
         if ($queue_output) {
-            // Match all Local/XXX@from-queue members with their status (last parentheses)
+            // Match all Local/XXX@from-queue members
             preg_match_all('/Local\/(\d+)@from-queue.*?has taken/', $queue_output, $matches, PREG_SET_ORDER);
             
-            // Also extract statuses separately
-            preg_match_all('/\d+ \(Local\/\d+@from-queue[^)]+\) \([^)]+\) \(([^)]+)\)/', $queue_output, $status_matches, PREG_SET_ORDER);
-            
             $agents = [];
-            foreach ($status_matches as $idx => $match) {
-                $status = trim($match[1]);
-                // Extract extension from the full match
-                if (preg_match('/(\d+) \(Local\/(\d+)@from-queue/', $match[0], $ext_match)) {
-                    $agents[] = [
-                        'ext' => $ext_match[2],
-                        'status' => $status
-                    ];
+            foreach ($matches as $match) {
+                $ext = $match[1];
+                $line = $match[0];
+                
+                // Determine status from keywords in the line
+                if (strpos($line, 'Not in use') !== false) {
+                    $status = 'Not in use';
+                } elseif (strpos($line, 'Unavailable') !== false) {
+                    $status = 'Unavailable';
+                } elseif (strpos($line, 'Ringing') !== false) {
+                    $status = 'Ringing';
+                } else {
+                    $status = 'Unknown';
                 }
+                
+                $agents[] = [
+                    'ext' => $ext,
+                    'status' => $status
+                ];
             }
             
             // Prefer "Not in use" agents
             foreach ($agents as $agent) {
-                if (strpos($agent['status'], 'Not in use') !== false) {
+                if ($agent['status'] === 'Not in use') {
                     $agent_extension = $agent['ext'];
                     break;
                 }
@@ -127,7 +134,7 @@ foreach ($ready_callbacks as $callback) {
             // If no "Not in use" agent, try any available agent
             if (empty($agent_extension)) {
                 foreach ($agents as $agent) {
-                    if (strpos($agent['status'], 'Unavailable') === false && strpos($agent['status'], 'Ringing') === false) {
+                    if ($agent['status'] !== 'Unavailable' && $agent['status'] !== 'Ringing') {
                         $agent_extension = $agent['ext'];
                         break;
                     }
@@ -142,6 +149,9 @@ foreach ($ready_callbacks as $callback) {
             $call_file_content .= "Context: queuecallback-agent-outbound\n";
             $call_file_content .= "Extension: s\n";
             $call_file_content .= "SetVar: __CALLBACK_CUSTOMER_NUM={$callback['callback_number']}\n";
+            if (!empty($callback['outbound_route_id']) && $callback['outbound_route_id'] != 1) {
+                $call_file_content .= "OutboundRouteID: {$callback['outbound_route_id']}\n";
+            }
         } else {
             // No agent found, skip this callback
             error_log("Callback skipped: No available agent found for queue {$callback['queue_id']}");
@@ -153,6 +163,9 @@ foreach ($ready_callbacks as $callback) {
         $call_file_content .= "CallerID: Queue Callback <{$callback['queue_id']}>\n";
         $call_file_content .= "Context: queuecallback-outbound\n";
         $call_file_content .= "Extension: s\n";
+        if (!empty($callback['outbound_route_id']) && $callback['outbound_route_id'] != 1) {
+            $call_file_content .= "OutboundRouteID: {$callback['outbound_route_id']}\n";
+        }
     }
 
     // Common call file content

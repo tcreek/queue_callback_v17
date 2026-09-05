@@ -1,3 +1,4 @@
+#!/usr/bin/php
 <?php
 /**
  * Queue Callback Module for FreePBX
@@ -18,13 +19,9 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-?>
-
-#!/usr/bin/php
-<?php
 require_once('/etc/freepbx.conf');
-$qcallback = \FreePBX::create()->Qcallback ?? null;
-if ($qcallback && method_exists($qcallback, 'processIntelligentCallbacks')) {
-    $n = $qcallback->processIntelligentCallbacks();
-    if ($n > 0) { error_log("Intelligent Queue Callback: processed $n"); }
+// Delegate to the working process_callbacks.php
+$script = __DIR__ . '/process_callbacks.php';
+if (file_exists($script)) {
+    passthru('/usr/bin/php ' . escapeshellarg($script) . ' 2>&1');
 }

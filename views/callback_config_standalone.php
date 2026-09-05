@@ -39,6 +39,17 @@ try {
     $recordings = array();
 }
 
+// Get available outbound routes
+$outbound_routes = array();
+try {
+    $db = FreePBX::Database();
+    $stmt = $db->prepare("SELECT route_id, name FROM outbound_routes ORDER BY name");
+    $stmt->execute();
+    $outbound_routes = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+} catch (Exception $e) {
+    $outbound_routes = array();
+}
+
 // Handle success/error messages from redirect
 if (isset($_GET['saved']) && $_GET['saved'] == '1') {
     echo '<div class="alert alert-success">Configuration saved successfully!</div>';
@@ -93,6 +104,21 @@ if (isset($_GET['error'])) {
                         </div>
                     </div>
                     
+                    <div class="form-group">
+                        <label class="col-sm-3 control-label">
+                            <?php echo _("Outbound Route") ?>
+                            <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
+                               title="<?php echo _("Select the outbound route to use for callback calls. This determines which trunk/route is used to call the customer or agent.") ?>"></i>
+                        </label>
+                        <div class="col-sm-9">
+                            <select class="form-control" name="callback_outbound_route_id" style="width: 300px;">
+                                <?php foreach ($outbound_routes as $route_id => $route_name): ?>
+                                    <option value="<?php echo $route_id; ?>" <?php echo ($callback_config['outbound_route_id'] ?? 1) == $route_id ? 'selected' : '' ?>><?php echo $route_name; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+
                     <div class="form-group">
                         <label class="col-sm-3 control-label">
                             <?php echo _("Callback Key") ?>
@@ -169,6 +195,8 @@ if (isset($_GET['error'])) {
                             </select>
                         </div>
                     </div>
+                    
+
                     
                     <div class="form-group">
                         <label class="col-sm-3 control-label">
