@@ -58,7 +58,22 @@ $sql = "SELECT r.*, c.retry_interval, c.max_attempts, c.processing_interval, c.c
         ORDER BY r.time_requested ASC LIMIT 10";
 
 $stmt = $db->prepare($sql);
-$stmt->execute([$current_time, $current_time]);
+try {
+    $stmt->execute([$current_time, $current_time]);
+} catch (PDOException $e) {
+    // Fallback: if outbound_route_id column doesn't exist (older schema), retry without it
+    $sql_fallback = "SELECT r.*, c.retry_interval, c.max_attempts, c.processing_interval, c.call_first
+                    FROM queuecallback_requests r 
+                    JOIN queuecallback_config c ON r.queue_id = c.queue_id 
+                    WHERE r.status = 'pending' 
+                    AND c.enabled = 1
+                    AND r.attempts < COALESCE(c.max_attempts, r.max_attempts, 3)
+                    AND ((r.last_attempt IS NULL AND r.time_requested + COALESCE(c.processing_interval, c.retry_interval, 30) <= ?)
+                         OR (r.last_attempt IS NOT NULL AND r.last_attempt + COALESCE(c.retry_interval, 30) <= ?))
+                    ORDER BY r.time_requested ASC LIMIT 10";
+    $stmt = $db->prepare($sql_fallback);
+    $stmt->execute([$current_time, $current_time]);
+}
 $ready_callbacks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Filter out duplicates and numbers already being called
@@ -93,13 +108,26 @@ foreach ($ready_callbacks as $callback) {
         $queue_output = shell_exec("/usr/sbin/asterisk -rx 'queue show {$callback['queue_id']}' 2>/dev/null");
         $agent_extension = '';
         
-        // Strip ANSI color codes
-        $queue_output = preg_replace('/\x1b\[[0-9;]*m/', '', $queue_output);
+        if ($queue_output === null) {
+            error_log("DEBUG: shell_exec returned null for queue {$callback['queue_id']}");
+        }
+        
+        // Strip ALL ANSI escape sequences (not just SGR color codes), carriage returns, and other control chars
+        $queue_output = preg_replace('/\x1b\[[0-9;?]*[a-zA-Z]/', '', $queue_output);
+        $queue_output = str_replace("\r", '', $queue_output);
+        
+        // Debug: log raw output for troubleshooting
+        error_log("DEBUG: Queue output for queue {$callback['queue_id']}:\n" . $queue_output);
         
         // Parse all queue members and find available ones
         if ($queue_output) {
-            // Match all Local/XXX@from-queue members
-            preg_match_all('/Local\/(\d+)@from-queue.*?has taken/', $queue_output, $matches, PREG_SET_ORDER);
+            // Match all Local/XXX@from-queue members with 'has taken' text (s flag for multiline)
+            preg_match_all('/Local\/(\d+)@from-queue.*?has taken/s', $queue_output, $matches, PREG_SET_ORDER);
+            
+            // Fallback: if no matches with 'has taken', match any Local/XXX@from-queue line
+            if (empty($matches)) {
+                preg_match_all('/Local\/(\d+)@from-queue[^\n]+/', $queue_output, $matches, PREG_SET_ORDER);
+            }
             
             $agents = [];
             foreach ($matches as $match) {
@@ -121,6 +149,14 @@ foreach ($ready_callbacks as $callback) {
                     'ext' => $ext,
                     'status' => $status
                 ];
+            }
+            
+            // Debug: log parsed agents
+            if (!empty($agents)) {
+                $agent_debug = array_map(function($a) { return "ext={$a['ext']} status={$a['status']}"; }, $agents);
+                error_log("DEBUG: Parsed agents: " . implode(", ", $agent_debug));
+            } else {
+                error_log("DEBUG: No agents matched regex. matches count: " . count($matches));
             }
             
             // Prefer "Not in use" agents
@@ -149,11 +185,13 @@ foreach ($ready_callbacks as $callback) {
             $call_file_content .= "Context: queuecallback-agent-outbound\n";
             $call_file_content .= "Extension: s\n";
             $call_file_content .= "SetVar: __CALLBACK_CUSTOMER_NUM={$callback['callback_number']}\n";
-            if (!empty($callback['outbound_route_id']) && $callback['outbound_route_id'] != 1) {
-                $call_file_content .= "OutboundRouteID: {$callback['outbound_route_id']}\n";
+            $outbound_route_id = $callback['outbound_route_id'] ?? 1;
+            if (!empty($outbound_route_id) && $outbound_route_id != 1) {
+                $call_file_content .= "OutboundRouteID: {$outbound_route_id}\n";
             }
         } else {
             // No agent found, skip this callback
+            error_log("DEBUG: agent_extension empty after parsing. agents count=" . count($agents ?? []));
             error_log("Callback skipped: No available agent found for queue {$callback['queue_id']}");
             continue;
         }
@@ -163,8 +201,9 @@ foreach ($ready_callbacks as $callback) {
         $call_file_content .= "CallerID: Queue Callback <{$callback['queue_id']}>\n";
         $call_file_content .= "Context: queuecallback-outbound\n";
         $call_file_content .= "Extension: s\n";
-        if (!empty($callback['outbound_route_id']) && $callback['outbound_route_id'] != 1) {
-            $call_file_content .= "OutboundRouteID: {$callback['outbound_route_id']}\n";
+        $outbound_route_id = $callback['outbound_route_id'] ?? 1;
+        if (!empty($outbound_route_id) && $outbound_route_id != 1) {
+            $call_file_content .= "OutboundRouteID: {$outbound_route_id}\n";
         }
     }
 

@@ -46,6 +46,13 @@ try {
             sql("ALTER TABLE `queuecallback_config` ADD COLUMN `call_first` VARCHAR(10) DEFAULT 'customer' AFTER `alt_number_key`");
             out("Added column: call_first");
         }
+
+        // outbound_route_id
+        $c = sql("SHOW COLUMNS FROM `queuecallback_config` LIKE 'outbound_route_id'", "getAll");
+        if (empty($c)) {
+            sql("ALTER TABLE `queuecallback_config` ADD COLUMN `outbound_route_id` INT DEFAULT 1 AFTER `call_first`");
+            out("Added column: outbound_route_id");
+        }
     } else {
         out("New installation. Creating tables...");
 
@@ -83,7 +90,8 @@ try {
             confirm_message_id VARCHAR(100) DEFAULT NULL,
             confirm_number TINYINT(1) DEFAULT 1,
             alt_number_key VARCHAR(10) DEFAULT '2',
-            call_first VARCHAR(10) DEFAULT 'customer'
+            call_first VARCHAR(10) DEFAULT 'customer',
+            outbound_route_id INT DEFAULT 1
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
 
         sql("CREATE TABLE queuecallback_trigger (
