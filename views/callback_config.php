@@ -91,8 +91,14 @@ try {
                     </div>
                     <div class="col-md-9">
                         <select class="form-control" id="callback_outbound_route_id" name="callback_outbound_route_id">
+                            <?php
+                            $selected_route_id = $callback_outbound_route_id ?? 1;
+                            if (!empty($outbound_routes) && !isset($outbound_routes[$selected_route_id])) {
+                                $selected_route_id = (int) array_keys($outbound_routes)[0];
+                            }
+                            ?>
                             <?php foreach ($outbound_routes as $route_id => $route_name): ?>
-                                <option value="<?php echo $route_id; ?>" <?php echo ($callback_outbound_route_id == $route_id) ? 'selected' : '' ?>><?php echo $route_name; ?></option>
+                                <option value="<?php echo $route_id; ?>" <?php echo $selected_route_id == $route_id ? 'selected' : '' ?>><?php echo $route_name; ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
