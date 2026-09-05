@@ -323,8 +323,11 @@ if (isset($_GET['error'])) {
                             <button type="submit" class="btn btn-primary">
                                 <i class="fa fa-save"></i> <?php echo _("Save Configuration") ?>
                             </button>
+                            <a href="?display=qcallback&view=queue&queue_id=<?php echo urlencode($queue_id) ?>" class="btn btn-default">
+                                <i class="fa fa-arrow-left"></i> <?php echo _("Back to Callbacks") ?>
+                            </a>
                             <a href="?display=qcallback" class="btn btn-default">
-                                <i class="fa fa-arrow-left"></i> <?php echo _("Back to Overview") ?>
+                                <i class="fa fa-arrow-up"></i> <?php echo _("Back to Overview") ?>
                             </a>
                         </div>
                     </div>

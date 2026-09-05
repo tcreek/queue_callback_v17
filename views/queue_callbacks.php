@@ -85,6 +85,9 @@ $callback_config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
                     <?php echo _("Pending Callbacks") ?>
                     <span class="badge"><?php echo count($callbacks) ?></span>
                     <div class="pull-right">
+                        <a href="?display=qcallback" class="btn btn-xs btn-default">
+                            <i class="fa fa-arrow-left"></i> <?php echo _("Back to Overview") ?>
+                        </a>
                         <button class="btn btn-xs btn-success" onclick="exportCallbacks()">
                             <i class="fa fa-download"></i> <?php echo _("Export CSV") ?>
                         </button>
