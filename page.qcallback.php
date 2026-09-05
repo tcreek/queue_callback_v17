@@ -232,6 +232,26 @@ if (isset($_REQUEST['action'])) {
                 }
             }
             break;
+            
+        case 'cancel_callback':
+            $callback_id = $_REQUEST['callback_id'] ?? '';
+            if ($callback_id) {
+                $result = queuecallback_cancel_request($callback_id);
+                header('Content-Type: application/json');
+                echo json_encode(['status' => $result ? 'success' : 'error', 'message' => $result ? 'Callback cancelled' : 'Failed to cancel callback']);
+                exit;
+            }
+            break;
+
+        case 'process_callback':
+            $callback_id = $_REQUEST['callback_id'] ?? '';
+            if ($callback_id) {
+                $result = queuecallback_process_request($callback_id);
+                header('Content-Type: application/json');
+                echo json_encode(['status' => $result ? 'success' : 'error', 'message' => $result ? 'Callback processing initiated' : 'Failed to process callback']);
+                exit;
+            }
+            break;
     }
     
     // If we get here, something went wrong
