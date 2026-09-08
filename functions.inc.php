@@ -205,7 +205,10 @@ function queuecallback_process_config() {
                         'enabled' => 1,
                         'announce_id' => null,
                         'callback_key' => '*',
-                        'processing_interval' => 30
+                        'processing_interval' => 30,
+                        'alt_message_id' => null,
+                        'initiated_message_id' => null,
+                        'confirm_prompt_id' => null
                     );
                     
                     FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $default_config);
@@ -426,7 +429,7 @@ function queuecallback_create_call_file($callback) {
     $call_file_content .= "RetryTime: 60\n";
     $call_file_content .= "WaitTime: 30\n";
     $call_file_content .= "Context: queuecallback-outbound\n";
-    $call_file_content .= "Extension: {$callback['callback_number']}\n";
+    $call_file_content .= "Extension: s\n";
     $call_file_content .= "Priority: 1\n";
     $call_file_content .= "Archive: yes\n";
     $call_file_content .= "SetVar: __CALLBACK_ID={$callback['id']}\n";
@@ -562,33 +565,18 @@ function qcallback_get_config($engine) {
                 }
             }
             
-            // Create outbound callback context
-            $context = 'queuecallback-outbound';
-            
-            // Handle outbound callback calls
-            $ext->add($context, '_X.', '', new ext_noop('Processing callback to ${EXTEN}'));
-            $ext->add($context, '_X.', '', new ext_set('CALLERID(name)', 'Queue Callback'));
-            $ext->add($context, '_X.', '', new ext_answer());
-            $ext->add($context, '_X.', '', new ext_wait('1'));
-            
-            // Play return message if configured
-            $ext->add($context, '_X.', '', new ext_gotoif('$["${CALLBACK_RETURN_MSG}" != ""]', 'custom_msg'));
-            
-            // Default messages
-            $ext->add($context, '_X.', '', new ext_playback('thank-you-for-calling'));
-            $ext->add($context, '_X.', '', new ext_playback('pls-hold-while-try'));
-            $ext->add($context, '_X.', '', new ext_goto('connect_queue'));
-            
-            // Custom message
-            $ext->add($context, '_X.', 'custom_msg', new ext_playback('custom/${CALLBACK_RETURN_MSG}'));
-            
-            // Connect to queue - use the queue ID from callback data
-            $ext->add($context, '_X.', 'connect_queue', new ext_goto('ext-queues,${CALLBACK_QUEUE_ID},1'));
-            
-            // DISABLED - Use extensions_custom.conf approach only
-            // The FreePBX dialplan generation has syntax issues
-            
-            // Dialplan write removed - only write when config changes
+            // Create outbound callback context - DISABLED: handled by extensions_custom.conf in install.php
+            // $context = 'queuecallback-outbound';
+            // $ext->add($context, '_X.', '', new ext_noop('Processing callback to ${EXTEN}'));
+            // $ext->add($context, '_X.', '', new ext_set('CALLERID(name)', 'Queue Callback'));
+            // $ext->add($context, '_X.', '', new ext_answer());
+            // $ext->add($context, '_X.', '', new ext_wait('1'));
+            // $ext->add($context, '_X.', '', new ext_gotoif('$["${CALLBACK_RETURN_MSG}" != ""]', 'custom_msg'));
+            // $ext->add($context, '_X.', '', new ext_playback('thank-you-for-calling'));
+            // $ext->add($context, '_X.', '', new ext_playback('pls-hold-while-try'));
+            // $ext->add($context, '_X.', '', new ext_goto('connect_queue'));
+            // $ext->add($context, '_X.', 'custom_msg', new ext_playback('custom/${CALLBACK_RETURN_MSG}'));
+            // $ext->add($context, '_X.', 'connect_queue', new ext_goto('ext-queues,${CALLBACK_QUEUE_ID},1'));
             
             break;
     }
@@ -641,6 +629,10 @@ function queuecallback_write_custom_dialplan() {
     
     // Remove existing callback queue sections
     $existing_content = preg_replace('/; Queue Callback Module - Start.*?; Queue Callback Module - End\n/s', '', $existing_content);
+    // Also remove stale QCALLBACK QUEUE ROUTES overrides from older versions
+    $existing_content = preg_replace('/; BEGIN QCALLBACK QUEUE ROUTES.*?; END QCALLBACK QUEUE ROUTES\n/s', '', $existing_content);
+    // Remove any stale [ext-queues] overrides that conflict with FreePBX defaults
+    $existing_content = preg_replace('/\n\[ext-queues\]\ninclude => ext-queues-custom\nexten => (\d+),1,NoOp\(Queue callback route for queue \1\)\n same => n,Set\(QOSUB=[^\n]+\)\n same => n,Set\(QGOSUB=[^\n]+\)\n same => n,Queue\(\d+\|t\)\n/s', '', $existing_content);
     
     // Build new IN-QUEUE callback dialplan
     $callback_dialplan = "\n; Queue Callback Module - Start\n";
@@ -826,7 +818,10 @@ function queuecallback_add_queue_config($queue_id) {
                 'enabled' => 0,  // Disabled by default
                 'announce_id' => null,
                 'callback_key' => '*',
-                'processing_interval' => 30
+                'processing_interval' => 30,
+                'alt_message_id' => null,
+                'initiated_message_id' => null,
+                'confirm_prompt_id' => null
             );
             
             FreePBX::Queuecallback()->setQueueCallbackConfig($queue_id, $default_config);
@@ -1041,7 +1036,10 @@ function queuecallback_hook_queue_add($queue_id) {
             'enabled' => 0,
             'announce_id' => null,
             'callback_key' => '*',
-            'processing_interval' => 30
+            'processing_interval' => 30,
+            'alt_message_id' => null,
+            'initiated_message_id' => null,
+            'confirm_prompt_id' => null
         );
         
         FreePBX::Queuecallback()->setQueueCallbackConfig($queue_id, $default_config);

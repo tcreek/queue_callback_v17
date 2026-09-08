@@ -26,6 +26,15 @@ $callback_key = $callback_config['callback_key'] ?? '*';
 $callback_processing_interval = $callback_config['processing_interval'] ?? 5;
 $callback_outbound_route_id = $callback_config['outbound_route_id'] ?? 1;
 
+// Default announcement placeholders
+$default_announcements = [
+    'announce_id'        => 'Default - ' . basename('/var/lib/asterisk/sounds/en/custom/callback-announcement.wav', '.wav'),
+    'alt_message_id'     => 'Default - ' . basename('/var/lib/asterisk/sounds/en/custom/alternate_num_instruct.wav', '.wav'),
+    'confirm_message_id' => 'Default - ' . basename('/var/lib/asterisk/sounds/en/custom/confirm_number.wav', '.wav'),
+    'return_message_id'  => 'Default - ' . basename('/var/lib/asterisk/sounds/en/custom/callback_returned.wav', '.wav'),
+    'confirm_prompt_id'  => 'Default - ' . basename('/var/lib/asterisk/sounds/en/custom/callback_confirm.wav', '.wav'),
+];
+
 // Get available recordings for announcements
 $recordings = array();
 try {
@@ -59,8 +68,7 @@ try {
             <div class="row">
                 <div class="form-group">
                     <div class="col-md-3">
-                        <label class="control-label"><?php echo _("Queue Callback") ?></label>
-                        <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_enabled"></i>
+                        <label class="control-label" for="callback_enabled"><?php echo _("Queue Callback") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_enabled"></i></label>
                     </div>
                     <div class="col-md-9 radioset">
                         <input type="radio" name="callback_enabled" id="callback_enabled-yes" value="1" <?php echo ($callback_enabled == '1') ? 'checked' : '' ?>>
@@ -86,8 +94,7 @@ try {
             <div class="row">
                 <div class="form-group">
                     <div class="col-md-3">
-                        <label class="control-label" for="callback_outbound_route_id"><?php echo _("Outbound Route") ?></label>
-                        <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_outbound_route_id"></i>
+                        <label class="control-label" for="callback_outbound_route_id"><?php echo _("Outbound Route") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_outbound_route_id"></i></label>
                     </div>
                     <div class="col-md-9">
                         <select class="form-control" id="callback_outbound_route_id" name="callback_outbound_route_id">
@@ -120,12 +127,11 @@ try {
             <div class="row">
                 <div class="form-group">
                     <div class="col-md-3">
-                        <label class="control-label" for="callback_announce_id"><?php echo _("Callback Announcement") ?></label>
-                        <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_announce_id"></i>
+                        <label class="control-label" for="callback_announce_id"><?php echo _("Callback Announcement") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_announce_id"></i></label>
                     </div>
                     <div class="col-md-9">
                         <select class="form-control" id="callback_announce_id" name="callback_announce_id">
-                            <option value=""><?php echo _("None") ?></option>
+                            <option value=""><?php echo htmlentities($default_announcements['announce_id']) ?></option>
                             <?php if (empty($recordings)): ?>
                                 <option value="" disabled><?php echo _("No recordings available - Create in System Recordings") ?></option>
                             <?php else: ?>
@@ -155,8 +161,7 @@ try {
             <div class="row">
                 <div class="form-group">
                     <div class="col-md-3">
-                        <label class="control-label" for="callback_announce_frequency"><?php echo _("Announcement Frequency") ?></label>
-                        <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_announce_frequency"></i>
+                        <label class="control-label" for="callback_announce_frequency"><?php echo _("Announcement Frequency") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_announce_frequency"></i></label>
                     </div>
                     <div class="col-md-9">
                         <div class="input-group">
@@ -182,8 +187,7 @@ try {
             <div class="row">
                 <div class="form-group">
                     <div class="col-md-3">
-                        <label class="control-label" for="callback_key"><?php echo _("Callback Key") ?></label>
-                        <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_key"></i>
+                        <label class="control-label" for="callback_key"><?php echo _("Callback Key") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_key"></i></label>
                     </div>
                     <div class="col-md-9">
                         <select class="form-control" id="callback_key" name="callback_key">
@@ -214,8 +218,7 @@ try {
             <div class="row">
                 <div class="form-group">
                     <div class="col-md-3">
-                        <label class="control-label" for="callback_processing_interval"><?php echo _("Processing Interval") ?></label>
-                        <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_processing_interval"></i>
+                        <label class="control-label" for="callback_processing_interval"><?php echo _("Processing Interval") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_processing_interval"></i></label>
                     </div>
                     <div class="col-md-9">
                         <div class="input-group">
@@ -241,8 +244,7 @@ try {
             <div class="row">
                 <div class="form-group">
                     <div class="col-md-3">
-                        <label class="control-label" for="callback_call_first"><?php echo _("Who to Call First") ?></label>
-                        <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_call_first"></i>
+                        <label class="control-label" for="callback_call_first"><?php echo _("Who to Call First") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_call_first"></i></label>
                     </div>
                     <div class="col-md-9">
                         <select class="form-control" id="callback_call_first" name="callback_call_first">
@@ -270,8 +272,7 @@ try {
             <div class="row">
                 <div class="form-group">
                     <div class="col-md-3">
-                        <label class="control-label" for="callback_confirm_number"><?php echo _("Confirm Callback Number") ?></label>
-                        <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_confirm_number"></i>
+                        <label class="control-label" for="callback_confirm_number"><?php echo _("Confirm Callback Number") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_confirm_number"></i></label>
                     </div>
                     <div class="col-md-9">
                         <select class="form-control" id="callback_confirm_number" name="callback_confirm_number">
@@ -297,8 +298,7 @@ try {
             <div class="row">
                 <div class="form-group">
                     <div class="col-md-3">
-                        <label class="control-label" for="callback_alt_number_key"><?php echo _("Different Number Key") ?></label>
-                        <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_alt_number_key"></i>
+                        <label class="control-label" for="callback_alt_number_key"><?php echo _("Different Number Key") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_alt_number_key"></i></label>
                     </div>
                     <div class="col-md-9">
                         <select class="form-control" id="callback_alt_number_key" name="callback_alt_number_key" style="width: 80px;">
@@ -314,6 +314,74 @@ try {
     <div class="row">
         <div class="col-md-12">
             <span id="callback_alt_number_key-help" class="help-block fpbx-help-block"><?php echo _("Key callers press if the detected number is incorrect or they want to be called back at a different number.") ?></span>
+        </div>
+    </div>
+</div>
+
+<!-- Alternate Number Instruction -->
+<div class="element-container callback-options confirm-keys-options" style="<?php echo ($callback_enabled == '1' && ($callback_config['confirm_number'] ?? 1) == 1) ? '' : 'display:none;' ?>">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="row">
+                <div class="form-group">
+                    <div class="col-md-3">
+                        <label class="control-label" for="callback_alt_message_id"><?php echo _("Alternate Number Instruction") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_alt_message_id"></i></label>
+                    </div>
+                    <div class="col-md-9">
+                        <select class="form-control" id="callback_alt_message_id" name="callback_alt_message_id">
+                            <option value=""><?php echo htmlentities($default_announcements['alt_message_id']) ?></option>
+                            <?php if (empty($recordings)): ?>
+                                <option value="" disabled><?php echo _("No recordings available - Create in System Recordings") ?></option>
+                            <?php else: ?>
+                                <?php foreach ($recordings as $recording): ?>
+                                    <option value="<?php echo $recording['id'] ?>" <?php echo ($callback_config['alt_message_id'] ?? '') == $recording['id'] ? 'selected' : '' ?>>
+                                        <?php echo htmlentities($recording['displayname']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12">
+            <span id="callback_alt_message_id-help" class="help-block fpbx-help-block"><?php echo _("Announcement played when a caller presses the alternate number key. Example: 'Please enter the phone number you wish to be called at, followed by the pound sign.'") ?></span>
+        </div>
+    </div>
+</div>
+
+<!-- Callback Confirm Prompt -->
+<div class="element-container callback-options confirm-keys-options" style="<?php echo ($callback_enabled == '1' && ($callback_config['confirm_number'] ?? 1) == 1) ? '' : 'display:none;' ?>">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="row">
+                <div class="form-group">
+                    <div class="col-md-3">
+                        <label class="control-label" for="callback_confirm_prompt_id"><?php echo _("Callback Confirm Prompt") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_confirm_prompt_id"></i></label>
+                    </div>
+                    <div class="col-md-9">
+                        <select class="form-control" id="callback_confirm_prompt_id" name="callback_confirm_prompt_id">
+                            <option value=""><?php echo htmlentities($default_announcements['confirm_prompt_id']) ?></option>
+                            <?php if (empty($recordings)): ?>
+                                <option value="" disabled><?php echo _("No recordings available - Create in System Recordings") ?></option>
+                            <?php else: ?>
+                                <?php foreach ($recordings as $recording): ?>
+                                    <option value="<?php echo $recording['id'] ?>" <?php echo ($callback_config['confirm_prompt_id'] ?? '') == $recording['id'] ? 'selected' : '' ?>>
+                                        <?php echo htmlentities($recording['displayname']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-12">
+            <span id="callback_confirm_prompt_id-help" class="help-block fpbx-help-block"><?php echo _("Announcement played after the callback number is confirmed to instruct the caller to press 1. Example: 'Press 1 to confirm your callback.'") ?></span>
         </div>
     </div>
 </div>

@@ -47,7 +47,7 @@ $db->exec("UPDATE queuecallback_requests SET status = 'cancelled'
            WHERE queue_id = '' OR queue_id IS NULL");
 
 // Find callbacks ready for processing based on per-queue configuration
-$sql = "SELECT r.*, c.retry_interval, c.max_attempts, c.processing_interval, c.call_first, c.outbound_route_id
+$sql = "SELECT r.*, c.retry_interval, c.max_attempts, c.processing_interval, c.call_first, c.outbound_route_id, c.return_message_id, c.confirm_prompt_id
         FROM queuecallback_requests r 
         JOIN queuecallback_config c ON r.queue_id = c.queue_id 
         WHERE r.status = 'pending' 
@@ -62,7 +62,7 @@ try {
     $stmt->execute([$current_time, $current_time]);
 } catch (PDOException $e) {
     // Fallback: if outbound_route_id column doesn't exist (older schema), retry without it
-    $sql_fallback = "SELECT r.*, c.retry_interval, c.max_attempts, c.processing_interval, c.call_first
+    $sql_fallback = "SELECT r.*, c.retry_interval, c.max_attempts, c.processing_interval, c.call_first, c.return_message_id, c.confirm_prompt_id
                     FROM queuecallback_requests r 
                     JOIN queuecallback_config c ON r.queue_id = c.queue_id 
                     WHERE r.status = 'pending' 
@@ -179,12 +179,13 @@ foreach ($ready_callbacks as $callback) {
         }
         
         if (!empty($agent_extension)) {
-            // Call the agent directly using PJSIP
             $call_file_content = "Channel: PJSIP/{$agent_extension}\n";
             $call_file_content .= "CallerID: QC Agent <{$callback['queue_id']}>\n";
             $call_file_content .= "Context: queuecallback-agent-outbound\n";
             $call_file_content .= "Extension: s\n";
             $call_file_content .= "SetVar: __CALLBACK_CUSTOMER_NUM={$callback['callback_number']}\n";
+            $call_file_content .= "SetVar: __CALLBACK_RETURN_MSG={$callback['return_message_id']}\n";
+            $call_file_content .= "SetVar: __CALLBACK_CUSTOMER_CHANNEL={$channel}\n";
             $outbound_route_id = $callback['outbound_route_id'] ?? 1;
             if (!empty($outbound_route_id) && $outbound_route_id != 1) {
                 $call_file_content .= "OutboundRouteID: {$outbound_route_id}\n";
@@ -215,6 +216,7 @@ foreach ($ready_callbacks as $callback) {
     $call_file_content .= "Archive: yes\n";
     $call_file_content .= "SetVar: __CALLBACK_ID={$callback['id']}\n";
     $call_file_content .= "SetVar: __CALLBACK_QUEUE_ID={$callback['queue_id']}\n";
+    $call_file_content .= "SetVar: __CALLBACK_RETURN_MSG={$callback['return_message_id']}\n";
     $call_file_content .= "SetVar: CHANNEL(hangup_handler_push)=qcb-complete,s,1({$callback['id']})\n";
 
     $call_file = "/var/spool/asterisk/outgoing/queuecallback_{$callback['id']}.call";

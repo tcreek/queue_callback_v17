@@ -72,6 +72,11 @@ try {
         $patterns = [
             // exact contexts install.php adds
             '/\n\[queuecallback-outbound\][\s\S]*?(?=\n\[|\z)/i',
+            '/\n\[qcb-customer-announce\][\s\S]*?(?=\n\[|\z)/i',
+            '/\n\[qcb-customer-confirm\][\s\S]*?(?=\n\[|\z)/i',
+            '/\n\[sub-qcb-customer-announce\][\s\S]*?(?=\n\[|\z)/i',
+            '/\n\[queuecallback-customer-announce\][\s\S]*?(?=\n\[|\z)/i',
+            '/\n\[queuecallback-customer-confirm2\][\s\S]*?(?=\n\[|\z)/i',
             '/\n\[queuecallback-agent-outbound\][\s\S]*?(?=\n\[|\z)/i',
             // defensive: older handler contexts
             '/\n\[qcb-hangup\][\s\S]*?(?=\n\[|\z)/i',

@@ -81,11 +81,12 @@ function queuecallback_process_single_callback($callback) {
         $call_file_content .= "RetryTime: 60\n";
         $call_file_content .= "WaitTime: 30\n";
         $call_file_content .= "Context: queuecallback-outbound\n";
-        $call_file_content .= "Extension: {$callback['callback_number']}\n";
+        $call_file_content .= "Extension: s\n";
         $call_file_content .= "Priority: 1\n";
         $call_file_content .= "Archive: yes\n";
         $call_file_content .= "SetVar: __CALLBACK_ID={$callback['id']}\n";
         $call_file_content .= "SetVar: __CALLBACK_QUEUE_ID={$callback['queue_id']}\n";
+        $call_file_content .= "SetVar: __CALLBACK_RETURN_MSG={$callback['return_message_id']}\n";
         
         $call_file = "/tmp/queuecallback_{$callback['id']}.call";
         
@@ -147,7 +148,7 @@ function queuecallback_hook_queues_configprocess() {
         
         // Generate dialplan after configuration changes
         if ($result) {
-            $qcallback->generateCallbackDialplan();
+            $qcallback->generateCallbackDialplan(true);
         }
     }
 }
@@ -158,7 +159,7 @@ function queuecallback_hook_queues_configprocess() {
 function queuecallback_hook_core_reload() {
     try {
         $qcallback = FreePBX::Qcallback();
-        $qcallback->generateCallbackDialplan();
+        $qcallback->generateCallbackDialplan(true);
     } catch (Exception $e) {
         freepbx_log(FPBX_LOG_ERROR, "Queue Callback reload error: " . $e->getMessage());
     }
@@ -170,7 +171,7 @@ function queuecallback_hook_core_reload() {
 function queuecallback_hook_core_configprocess() {
     try {
         $qcallback = FreePBX::Qcallback();
-        $qcallback->generateCallbackDialplan();
+        $qcallback->generateCallbackDialplan(true);
     } catch (Exception $e) {
         freepbx_log(FPBX_LOG_ERROR, "Queue Callback config process error: " . $e->getMessage());
     }

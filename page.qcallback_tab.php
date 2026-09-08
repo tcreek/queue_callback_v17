@@ -42,13 +42,19 @@ if ($_POST) {
     $processing_interval = (int)($_POST['processing_interval'] ?? 30);
     $announce_id = $_POST['announce_id'] ?? null;
     $return_message_id = $_POST['return_message_id'] ?? null;
+    $alt_message_id = $_POST['alt_message_id'] ?? null;
+    $initiated_message_id = $_POST['initiated_message_id'] ?? null;
+    $confirm_prompt_id = $_POST['confirm_prompt_id'] ?? null;
     
     $new_config = array(
         'enabled' => $enabled,
         'callback_key' => $callback_key,
         'processing_interval' => $processing_interval,
         'announce_id' => $announce_id,
-        'return_message_id' => $return_message_id
+        'return_message_id' => $return_message_id,
+        'alt_message_id' => $alt_message_id,
+        'initiated_message_id' => $initiated_message_id,
+        'confirm_prompt_id' => $confirm_prompt_id
     );
     
     FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $new_config);
@@ -67,6 +73,9 @@ $callback_key = $callback_config['callback_key'] ?? '*';
 $processing_interval = $callback_config['processing_interval'] ?? 30;
 $announce_id = $callback_config['announce_id'] ?? '';
 $return_message_id = $callback_config['return_message_id'] ?? '';
+$alt_message_id = $callback_config['alt_message_id'] ?? '';
+$initiated_message_id = $callback_config['initiated_message_id'] ?? '';
+$confirm_prompt_id = $callback_config['confirm_prompt_id'] ?? '';
 ?>
 
 <div class="container-fluid">
@@ -83,8 +92,7 @@ $return_message_id = $callback_config['return_message_id'] ?? '';
             
             <div class="form-group">
                 <div class="col-md-3">
-                    <label class="control-label" for="callback_enabled">Enable Callback</label>
-                    <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_enabled"></i>
+                    <label class="control-label" for="callback_enabled">Enable Callback <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_enabled"></i></label>
                 </div>
                 <div class="col-md-9">
                     <span class="radioset">
@@ -101,8 +109,7 @@ $return_message_id = $callback_config['return_message_id'] ?? '';
             
             <div class="form-group">
                 <div class="col-md-3">
-                    <label class="control-label" for="callback_key">Callback Key</label>
-                    <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_key"></i>
+                    <label class="control-label" for="callback_key">Callback Key <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_key"></i></label>
                 </div>
                 <div class="col-md-9">
                     <input type="text" class="form-control" id="callback_key" name="callback_key" value="<?php echo htmlspecialchars($callback_key); ?>" maxlength="1">
@@ -114,8 +121,7 @@ $return_message_id = $callback_config['return_message_id'] ?? '';
             
             <div class="form-group">
                 <div class="col-md-3">
-                    <label class="control-label" for="processing_interval">Processing Interval</label>
-                    <i class="fa fa-question-circle fpbx-help-icon" data-for="processing_interval"></i>
+                    <label class="control-label" for="processing_interval">Processing Interval <i class="fa fa-question-circle fpbx-help-icon" data-for="processing_interval"></i></label>
                 </div>
                 <div class="col-md-9">
                     <input type="number" class="form-control" id="processing_interval" name="processing_interval" value="<?php echo $processing_interval; ?>" min="1" max="60">
@@ -136,8 +142,7 @@ $return_message_id = $callback_config['return_message_id'] ?? '';
             
             <div class="form-group">
                 <div class="col-md-3">
-                    <label class="control-label" for="announce_id">Callback Announcement</label>
-                    <i class="fa fa-question-circle fpbx-help-icon" data-for="announce_id"></i>
+                    <label class="control-label" for="announce_id">Callback Announcement <i class="fa fa-question-circle fpbx-help-icon" data-for="announce_id"></i></label>
                 </div>
                 <div class="col-md-9">
                     <input type="text" class="form-control" id="announce_id" name="announce_id" value="<?php echo htmlspecialchars($announce_id); ?>">
@@ -149,8 +154,7 @@ $return_message_id = $callback_config['return_message_id'] ?? '';
             
             <div class="form-group">
                 <div class="col-md-3">
-                    <label class="control-label" for="return_message_id">Return Message</label>
-                    <i class="fa fa-question-circle fpbx-help-icon" data-for="return_message_id"></i>
+                    <label class="control-label" for="return_message_id">Return Message <i class="fa fa-question-circle fpbx-help-icon" data-for="return_message_id"></i></label>
                 </div>
                 <div class="col-md-9">
                     <input type="text" class="form-control" id="return_message_id" name="return_message_id" value="<?php echo htmlspecialchars($return_message_id); ?>">
@@ -158,6 +162,42 @@ $return_message_id = $callback_config['return_message_id'] ?? '';
             </div>
             <div class="help-block" id="return_message_id-help">
                 Optional custom message to play when calling back (e.g., "custom/callback-return").
+            </div>
+            
+            <div class="form-group">
+                <div class="col-md-3">
+                    <label class="control-label" for="alt_message_id">Alternate Number Instruction <i class="fa fa-question-circle fpbx-help-icon" data-for="alt_message_id"></i></label>
+                </div>
+                <div class="col-md-9">
+                    <input type="text" class="form-control" id="alt_message_id" name="alt_message_id" value="<?php echo htmlspecialchars($alt_message_id); ?>">
+                </div>
+            </div>
+            <div class="help-block" id="alt_message_id-help">
+                Optional announcement played when caller presses the alternate number key (e.g., "custom/enter-alt-number").
+            </div>
+            
+            <div class="form-group">
+                <div class="col-md-3">
+                    <label class="control-label" for="initiated_message_id">Callback Initiated Announcement <i class="fa fa-question-circle fpbx-help-icon" data-for="initiated_message_id"></i></label>
+                </div>
+                <div class="col-md-9">
+                    <input type="text" class="form-control" id="initiated_message_id" name="initiated_message_id" value="<?php echo htmlspecialchars($initiated_message_id); ?>">
+                </div>
+            </div>
+            <div class="help-block" id="initiated_message_id-help">
+                Optional announcement played after callback is successfully scheduled (e.g., "custom/callback_initiated").
+            </div>
+            
+            <div class="form-group">
+                <div class="col-md-3">
+                    <label class="control-label" for="confirm_prompt_id">Callback Confirm Prompt <i class="fa fa-question-circle fpbx-help-icon" data-for="confirm_prompt_id"></i></label>
+                </div>
+                <div class="col-md-9">
+                    <input type="text" class="form-control" id="confirm_prompt_id" name="confirm_prompt_id" value="<?php echo htmlspecialchars($confirm_prompt_id); ?>">
+                </div>
+            </div>
+            <div class="help-block" id="confirm_prompt_id-help">
+                Optional announcement played after number confirmation to ask caller to press 1 (e.g., "custom/callback_confirm").
             </div>
             
         </div>

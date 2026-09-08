@@ -32,6 +32,15 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
     /** @var \PDO */
     protected $db;
 
+    public const DEFAULT_ANNOUNCEMENTS = [
+        'announce_id'         => 'custom/callback-announcement',
+        'alt_message_id'      => 'custom/alternate_num_instruct',
+        'confirm_message_id'  => 'custom/confirm_number',
+        'return_message_id'   => 'custom/callback_returned',
+        'initiated_message_id'=> 'custom/callback_initiated',
+        'confirm_prompt_id'   => 'custom/callback_confirm',
+    ];
+
     public function __construct($freepbx = null) {
         $this->FreePBX = $freepbx;
         $this->db = $freepbx->Database;
@@ -178,7 +187,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
      * ------------------------------------------------------------------*/
     private function getEnabledQueuesWithConfig(): array {
         try {
-            $sql = "SELECT queue_id, announce_id, announce_frequency, callback_key, alt_number_key, confirm_number, confirm_message_id
+            $sql = "SELECT queue_id, announce_id, announce_frequency, callback_key, alt_number_key, confirm_number, confirm_message_id, alt_message_id, return_message_id, initiated_message_id, confirm_prompt_id
                     FROM queuecallback_config WHERE enabled = 1";
             $stmt = $this->db->prepare($sql);
             $stmt->execute();
@@ -187,19 +196,33 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             foreach ($rows as $r) {
                 $out[] = [
                     'queue_id'             => $r['queue_id'],
-                    'announce_id'          => $r['announce_id'],
+                    'announce_id'          => $r['announce_id'] ?: self::DEFAULT_ANNOUNCEMENTS['announce_id'],
                     'announce_frequency'   => (int)($r['announce_frequency'] ?? 1),
                     'callback_key'         => $r['callback_key'] ?: '*',
                     'alt_number_key'       => $r['alt_number_key'] ?: '',
                     'confirm_number'       => isset($r['confirm_number']) ? (int)$r['confirm_number'] : 1,
-                    'announce_file'        => $this->resolveAnnouncementFile($r['announce_id']),
-                    'confirm_message_file' => $this->resolveAnnouncementFile($r['confirm_message_id'] ?? null),
+                    'announce_file'        => $this->resolveOrDefault($r['announce_id'], 'announce_id'),
+                    'confirm_message_file' => $this->resolveOrDefault($r['confirm_message_id'] ?? null, 'confirm_message_id'),
+                    'alt_message_file'     => $this->resolveOrDefault($r['alt_message_id'] ?? null, 'alt_message_id'),
+                    'return_message_file'  => $this->resolveOrDefault($r['return_message_id'] ?? null, 'return_message_id'),
+                    'initiated_message_file' => $this->resolveOrDefault($r['initiated_message_id'] ?? null, 'initiated_message_id'),
+                    'confirm_prompt_file'    => $this->resolveOrDefault($r['confirm_prompt_id'] ?? null, 'confirm_prompt_id'),
                 ];
             }
             return $out;
         } catch (\Throwable $e) {
             return [];
         }
+    }
+
+    private function resolveOrDefault($announce_id, string $field): string {
+        if (!empty($announce_id)) {
+            $resolved = $this->resolveAnnouncementFile($announce_id);
+            if ($resolved !== '' && $resolved !== 'please-hold') {
+                return $resolved;
+            }
+        }
+        return self::DEFAULT_ANNOUNCEMENTS[$field] ?? '';
     }
 
     private function resolveAnnouncementFile($announce_id): string {
@@ -291,6 +314,9 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             'confirm_message_id'  => null,
             'confirm_number'      => 1,
             'alt_number_key'      => '2',
+            'alt_message_id'      => null,
+            'initiated_message_id'=> null,
+            'confirm_prompt_id'   => null,
             'call_first'          => 'customer',
             'outbound_route_id'   => 1
         ];
@@ -302,8 +328,8 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         }
 
         $sql = "INSERT INTO queuecallback_config
-                (queue_id, enabled, announce_id, announce_frequency, callback_key, processing_interval, max_attempts, retry_interval, return_message_id, confirm_message_id, confirm_number, alt_number_key, call_first, outbound_route_id)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                (queue_id, enabled, announce_id, announce_frequency, callback_key, processing_interval, max_attempts, retry_interval, return_message_id, confirm_message_id, confirm_number, alt_number_key, alt_message_id, initiated_message_id, confirm_prompt_id, call_first, outbound_route_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON DUPLICATE KEY UPDATE
                 enabled=VALUES(enabled),
                 announce_id=VALUES(announce_id),
@@ -316,6 +342,9 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
                 confirm_message_id=VALUES(confirm_message_id),
                 confirm_number=VALUES(confirm_number),
                 alt_number_key=VALUES(alt_number_key),
+                alt_message_id=VALUES(alt_message_id),
+                initiated_message_id=VALUES(initiated_message_id),
+                confirm_prompt_id=VALUES(confirm_prompt_id),
                 call_first=VALUES(call_first),
                 outbound_route_id=VALUES(outbound_route_id)";
         $stmt = $this->db->prepare($sql);
@@ -332,6 +361,9 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             $config['confirm_message_id'] ?? null,
             $config['confirm_number'] ?? 1,
             $config['alt_number_key'] ?? '2',
+            $config['alt_message_id'] ?? null,
+            $config['initiated_message_id'] ?? null,
+            $config['confirm_prompt_id'] ?? null,
             $config['call_first'] ?? 'customer',
             $config['outbound_route_id'] ?? 1
         ]);
@@ -396,6 +428,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
 
             $buf .= "[$qid](+)\n";
             $buf .= "context=queuecallback-$qid\n";
+            $buf .= "dtmf_features=0-9*#\n";
             if (!empty($ann)) {
                 $buf .= "periodic-announce=$ann\n";
                 $buf .= "periodic-announce-frequency=$freqSec\n";
@@ -425,8 +458,13 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         foreach ($configs as $c) {
             $qid = $c['queue_id'];
             $content = preg_replace('/\n\[queuecallback-' . preg_quote($qid, '/') . '\][\s\S]*?(?=\n\[|\z)/', '', $content);
+            $content = preg_replace('/\n\[qcb-handler-' . preg_quote($qid, '/') . '\][\s\S]*?(?=\n\[|\z)/', '', $content);
         }
         $content = preg_replace('/\n\[qcb-hangup\][\s\S]*?(?=\n\[|\z)/', '', $content);
+        // Remove stale [ext-queues] override with QCALLBACK QUEUE ROUTES markers
+        $content = preg_replace('/\n; BEGIN QCALLBACK QUEUE ROUTES.*?; END QCALLBACK QUEUE ROUTES\n/s', '', $content);
+        // Remove stale contexts from earlier module versions
+        $content = preg_replace('/\n\[queuecallback-handler-fixed\][\s\S]*?(?=\n\[|\z)/', '', $content);
 
         // Shared hangup handler
         $content .= "\n[qcb-hangup]\n";
@@ -451,10 +489,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             $handler .= "exten => s,1,NoOp(QCB: DTMF in queue $qid from \${CALLERID(all)} digit=\${IF(\${ISNULL(\${CHANNEL(dtmf-digit)})}?unknown:\${CHANNEL(dtmf-digit)})})\n";
             $handler .= " same => n,Set(QUEUENAME=$qid)\n";
             $handler .= " same => n,Set(CALLBACK_NUMBER=\${CALLERID(num)})\n";
-            $handler .= " same => n,GotoIf(\$[\"\${CHANNEL(dtmf-digit)}\" = \"$ckey\"]?callback)\n";
-            if ($alt !== '') {
-                $handler .= " same => n,GotoIf(\$[\"\${CHANNEL(dtmf-digit)}\" = \"$alt\"]?alt)\n";
-            }
+            $handler .= " same => n,GotoIf(\$[\"\${CHANNEL(dtmf-digit)}\" = \"$ckey\"]?$ctx,$ckey,1)\n";
             $handler .= " same => n,Return()\n";
 
             // Direct-key handlers (test6 structure preserved)
@@ -462,49 +497,56 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             $handler .= " same => n,Set(CALLBACK_NUMBER=\${CALLERID(num)})\n";
             $handler .= " same => n,Set(CALLBACK_QUEUE=$qid)\n";
             $handler .= " same => n,AGI(queuecallback-check.agi)\n";
-            $handler .= " same => n,GotoIf(\$[\"\${QUEUE_CALLBACK_ENABLED}\" = \"1\"]?confirm:unavailable)\n";
+            $handler .= " same => n,GotoIf(\$[\"\${QUEUE_CALLBACK_ENABLED}\" = \"1\"]?confirm,1:unavailable)\n";
             $handler .= " same => n(unavailable),Playback(im-sorry)\n";
             $handler .= " same => n,Playback(goodbye)\n";
             $handler .= " same => n,Hangup()\n";
 
             $confirmFile = $c['confirm_message_file'] ?: 'beep';
+            $confirmPrompt = $c['confirm_prompt_file'] ?: self::DEFAULT_ANNOUNCEMENTS['confirm_prompt_id'];
 
-            // Confirm flow: Background() + timeouts + WaitExten for post-prompt digits
-            $handler .= " same => n(confirm),NoOp(QCB confirm menu for $qid)\n";
-            $handler .= " same => n,Set(CHANNEL(hangup_handler_push)=qcb-hangup,s,1(\${CALLBACK_QUEUE},\${CALLBACK_NUMBER}))\n";
+      // Confirm flow: play number + instruction, then read DTMF
+            $handler .= "exten => confirm,1,NoOp(QCB confirm menu for $qid)\n";
             $handler .= " same => n,SayDigits(\${CALLBACK_NUMBER})\n";
-            $handler .= " same => n,Background($confirmFile)\n";
-            $handler .= " same => n,Set(TIMEOUT(digit)=5)\n";
-            $handler .= " same => n,Set(TIMEOUT(response)=10)\n";
-            $handler .= " same => n,WaitExten(10)\n";
-
-            // Explicit handlers for WaitExten and Background digit grabs
-            $handler .= "exten => #,1,NoOp(QCB confirm via #)\n";
-            $handler .= " same => n,Goto(queuecallback-$qid,store,1)\n";
-            $handler .= "exten => $confirm,1,NoOp(QCB confirm via $confirm)\n";
-            $handler .= " same => n,Goto(queuecallback-$qid,store,1)\n";
+            $handler .= " same => n,Read(CONFIRM1,$confirmFile,1,n,5)\n";
+            $handler .= " same => n,GotoIf(\$[\"\${CONFIRM1}\" = \"\"]?cancel)\n";
+            $handler .= " same => n,GotoIf(\$[\"\${CONFIRM1}\" = \"1\"]?confirm2)\n";
             if ($alt !== '') {
-                $handler .= "exten => $alt,1,NoOp(QCB alternate number)\n";
-                $handler .= " same => n,Goto(queuecallback-$qid,alt,1)\n";
+                $handler .= " same => n,GotoIf(\$[\"\${CONFIRM1}\" = \"2\"]?alt,1:invalid)\n";
+            } else {
+                $handler .= " same => n,Goto(invalid)\n";
             }
-
-            // Invalid/timeout for safety
-            $handler .= "exten => t,1,Playback(goodbye)\n";
+            $handler .= " same => n(invalid),Playback(vm-invalid)\n";
+            $handler .= " same => n,Goto(confirm,1)\n";
+            $handler .= " same => n(confirm2),Wait(1)\n";
+            $handler .= " same => n,Read(CONFIRM2,$confirmPrompt,1,n,5)\n";
+            $handler .= " same => n,GotoIf(\$[\"\${CONFIRM2}\" = \"\"]?cancel)\n";
+            $handler .= " same => n,GotoIf(\$[\"\${CONFIRM2}\" != \"1\"]?confirm,1)\n";
+            $handler .= " same => n,Goto(queuecallback-$qid,store,1)\n";
+            $handler .= "exten => cancel,1,Playback(goodbye)\n";
+            $handler .= " same => n,Set(QCB_CONFIRMED=0)\n";
             $handler .= " same => n,Hangup()\n";
-            $handler .= "exten => i,1,Playback(vm-invalid)\n";
-            $handler .= " same => n,WaitExten(5)\n";
 
-            // Alt number flow
             if ($alt !== '') {
-                $handler .= "exten => alt,1,Read(ALTNUM,beep,10,,3,10)\n";
+                $handler .= "exten => alt,1,NoOp(QCB alt number entry for $qid)\n";
+                $altFile = $c['alt_message_file'];
+                if ($altFile !== '') {
+                    $handler .= " same => n,Playback($altFile)\n";
+                } else {
+                    $handler .= " same => n,Playback(please-enter-your)\n";
+                    $handler .= " same => n,Playback(at-following-number)\n";
+                }
+                $handler .= " same => n,Read(ALTNUM,beep,10,,,10)\n";
+                $handler .= " same => n,GotoIf(\$[\"\${ALTNUM}\" = \"\"]?alt,1)\n";
                 $handler .= " same => n,Set(CALLBACK_NUMBER=\${FILTER(0-9,\${ALTNUM})})\n";
-                $handler .= " same => n,Goto(store,1)\n";
+                $handler .= " same => n,Goto(queuecallback-$qid,store,1)\n";
             }
 
             // Store + finish
             $handler .= "exten => store,1,Set(QCB_CONFIRMED=1)\n";
             $handler .= " same => n,Set(QCB_CONFIRM_SOURCE=dtmf)\n";
             $handler .= " same => n,AGI(queuecallback-store.agi)\n";
+            $handler .= " same => n,Playback({$c['initiated_message_file']})\n";
             $handler .= " same => n,Playback(thank-you-for-calling)\n";
             $handler .= " same => n,Playback(goodbye)\n";
             $handler .= " same => n,Hangup()\n\n";
@@ -543,14 +585,8 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             $gosub_context = 'queuecallback-' . $qid;
 
             $ov .= "; --- Queue $qid Callback Override ---\n";
-            $ov .= "exten => $qid,1,Set(_QOPTS=\${QOPTIONS})\n";
-            // Strip H for DTMF detection
-            $ov .= ' same => n,ExecIf($["${_QOPTS}" != ""]?Set(_QOPTS=${STRREPLACE(${_QOPTS},H,)}))' . "\n";
-            // Add our G() option for the handler
-            $ov .= ' same => n,Set(_QOPTS=${_QOPTS}G(' . $gosub_context . ',s,1))' . "\n";
-            // Set final QOPTIONS for FreePBX dialplan
-            $ov .= ' same => n,Set(QOPTIONS=${_QOPTS})' . "\n";
-            // Return to normal FreePBX flow
+            // Set QGOSUB to our handler for pre-connection DTMF check
+            $ov .= "exten => $qid,1,Set(__QGOSUB=$gosub_context,s,1)\n";
             $ov .= " same => n,Goto(from-internal-additional,$qid,1)\n\n";
         }
 

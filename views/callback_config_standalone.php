@@ -50,6 +50,16 @@ try {
     $outbound_routes = array();
 }
 
+// Default announcement filenames
+$default_announcements = array(
+    'announce_id'         => 'Callback Announcement',
+    'confirm_message_id'  => 'Number Confirmation',
+    'alt_message_id'      => 'Alternate Number Instruction',
+    'confirm_prompt_id'   => 'Callback Confirm Prompt',
+    'return_message_id'   => 'Return Call Announcement',
+    'initiated_message_id'=> 'Callback Initiated Announcement'
+);
+
 // Handle success/error messages from redirect
 if (isset($_GET['saved']) && $_GET['saved'] == '1') {
     echo '<div class="alert alert-success">Configuration saved successfully!</div>';
@@ -241,14 +251,14 @@ if (isset($_GET['error'])) {
                         <div role="tabpanel" class="tab-pane" id="announcements-tab">
                             
                             <div class="form-group">
-                                <label class="col-sm-3 control-label">
+                                <label class="col-sm-3 control-label" style="white-space:nowrap;">
                                     <?php echo _("Queue Callback Instruction") ?>
                                     <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
                                        title="<?php echo _("Announcement played AFTER the queue's initial announcement to instruct callers how to request a callback. Example: 'If you would like us to call you back instead of waiting, press star now.'") ?>"></i>
                                 </label>
                                 <div class="col-sm-9">
                                     <select class="form-control" name="callback_announce_id">
-                                        <option value=""><?php echo _("None - No callback instruction") ?></option>
+                                        <option value=""><?php echo _('Default') ?> - <?php echo htmlentities($default_announcements['announce_id']) ?></option>
                                         <?php foreach ($recordings as $recording): ?>
                                             <option value="<?php echo htmlentities($recording['id']) ?>" 
                                                     <?php echo ($callback_config['announce_id'] == $recording['id']) ? 'selected' : '' ?>>
@@ -277,16 +287,73 @@ if (isset($_GET['error'])) {
 
                             <div class="form-group">
                                 <label class="col-sm-3 control-label">
+                                    <?php echo _("Alternate Number Instruction") ?>
+                                    <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
+                                       title="<?php echo _("Announcement played when a caller presses the alternate number key. Example: 'Please enter the phone number you wish to be called at, followed by the pound sign.'") ?>"></i>
+                                </label>
+                                <div class="col-sm-9">
+                                    <select class="form-control" name="callback_alt_message_id">
+                                        <option value=""><?php echo _('Default') ?> - <?php echo htmlentities($default_announcements['alt_message_id']) ?></option>
+                                        <?php foreach ($recordings as $recording): ?>
+                                            <option value="<?php echo htmlentities($recording['id']) ?>" 
+                                                    <?php echo ($callback_config['alt_message_id'] ?? '') == $recording['id'] ? 'selected' : '' ?>>
+                                                <?php echo htmlentities($recording['displayname']) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="col-sm-3 control-label">
                                     <?php echo _("Number Confirmation") ?>
                                     <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
                                        title="<?php echo _("Announcement played to confirm the callback number with the caller. Example: 'We will call you back at [number]. If correct, press pound. Otherwise press 2.'") ?>"></i>
                                 </label>
                                 <div class="col-sm-9">
                                     <select class="form-control" name="callback_confirm_message_id">
-                                        <option value=""><?php echo _("None - Use default prompts") ?></option>
+                                        <option value=""><?php echo _('Default') ?> - <?php echo htmlentities($default_announcements['confirm_message_id']) ?></option>
                                         <?php foreach ($recordings as $recording): ?>
                                             <option value="<?php echo htmlentities($recording['id']) ?>" 
                                                     <?php echo ($callback_config['confirm_message_id'] ?? '') == $recording['id'] ? 'selected' : '' ?>>
+                                                <?php echo htmlentities($recording['displayname']) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="col-sm-3 control-label">
+                                    <?php echo _("Callback Confirm Prompt") ?>
+                                    <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
+                                       title="<?php echo _("Announcement played after the callback number confirmation to instruct the caller to press 1. Example: 'Press 1 to confirm.'") ?>"></i>
+                                </label>
+                                <div class="col-sm-9">
+                                    <select class="form-control" name="callback_confirm_prompt_id">
+                                        <option value=""><?php echo _('Default') ?> - <?php echo htmlentities($default_announcements['confirm_prompt_id']) ?></option>
+                                        <?php foreach ($recordings as $recording): ?>
+                                            <option value="<?php echo htmlentities($recording['id']) ?>" 
+                                                    <?php echo ($callback_config['confirm_prompt_id'] ?? '') == $recording['id'] ? 'selected' : '' ?>>
+                                                <?php echo htmlentities($recording['displayname']) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="col-sm-3 control-label">
+                                    <?php echo _("Callback Initiated Announcement") ?>
+                                    <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
+                                       title="<?php echo _("Announcement played after the callback has been successfully scheduled. Example: 'Your callback request has been received. Someone will call you back shortly.'") ?>"></i>
+                                </label>
+                                <div class="col-sm-9">
+                                    <select class="form-control" name="callback_initiated_message_id">
+                                        <option value=""><?php echo _('Default') ?> - <?php echo htmlentities($default_announcements['initiated_message_id']) ?></option>
+                                        <?php foreach ($recordings as $recording): ?>
+                                            <option value="<?php echo htmlentities($recording['id']) ?>" 
+                                                    <?php echo ($callback_config['initiated_message_id'] ?? '') == $recording['id'] ? 'selected' : '' ?>>
                                                 <?php echo htmlentities($recording['displayname']) ?>
                                             </option>
                                         <?php endforeach; ?>
@@ -302,7 +369,7 @@ if (isset($_GET['error'])) {
                                 </label>
                                 <div class="col-sm-9">
                                     <select class="form-control" name="callback_return_message_id">
-                                        <option value=""><?php echo _("None - No announcement") ?></option>
+                                        <option value=""><?php echo _('Default') ?> - <?php echo htmlentities($default_announcements['return_message_id']) ?></option>
                                         <?php foreach ($recordings as $recording): ?>
                                             <option value="<?php echo htmlentities($recording['id']) ?>" 
                                                     <?php echo ($callback_config['return_message_id'] == $recording['id']) ? 'selected' : '' ?>>

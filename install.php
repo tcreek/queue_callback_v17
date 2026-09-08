@@ -53,6 +53,27 @@ try {
             sql("ALTER TABLE `queuecallback_config` ADD COLUMN `outbound_route_id` INT DEFAULT 1 AFTER `call_first`");
             out("Added column: outbound_route_id");
         }
+
+        // alt_message_id
+        $c = sql("SHOW COLUMNS FROM `queuecallback_config` LIKE 'alt_message_id'", "getAll");
+        if (empty($c)) {
+            sql("ALTER TABLE `queuecallback_config` ADD COLUMN `alt_message_id` VARCHAR(100) DEFAULT NULL AFTER `confirm_number`");
+            out("Added column: alt_message_id");
+        }
+
+        // initiated_message_id
+        $c = sql("SHOW COLUMNS FROM `queuecallback_config` LIKE 'initiated_message_id'", "getAll");
+        if (empty($c)) {
+            sql("ALTER TABLE `queuecallback_config` ADD COLUMN `initiated_message_id` VARCHAR(100) DEFAULT NULL AFTER `alt_message_id`");
+            out("Added column: initiated_message_id");
+        }
+
+        // confirm_prompt_id
+        $c = sql("SHOW COLUMNS FROM `queuecallback_config` LIKE 'confirm_prompt_id'", "getAll");
+        if (empty($c)) {
+            sql("ALTER TABLE `queuecallback_config` ADD COLUMN `confirm_prompt_id` VARCHAR(100) DEFAULT NULL AFTER `initiated_message_id`");
+            out("Added column: confirm_prompt_id");
+        }
     } else {
         out("New installation. Creating tables...");
 
@@ -90,6 +111,9 @@ try {
             confirm_message_id VARCHAR(100) DEFAULT NULL,
             confirm_number TINYINT(1) DEFAULT 1,
             alt_number_key VARCHAR(10) DEFAULT '2',
+            alt_message_id VARCHAR(100) DEFAULT NULL,
+            initiated_message_id VARCHAR(100) DEFAULT NULL,
+            confirm_prompt_id VARCHAR(100) DEFAULT NULL,
             call_first VARCHAR(10) DEFAULT 'customer',
             outbound_route_id INT DEFAULT 1
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
@@ -104,6 +128,58 @@ try {
     }
 } catch (\Throwable $e) {
     out("Database setup error: " . $e->getMessage());
+}
+
+/* -------------------------------------------------------------------
+ * 1b) DEFAULT ANNOUNCEMENT FILES
+ * -------------------------------------------------------------------*/
+try {
+    $srcDir = __DIR__ . '/announcements';
+    $dstDir = '/var/lib/asterisk/sounds/en/custom';
+
+    $defaultAnnouncements = [
+        'callback-announcement.wav',
+        'alternate_num_instruct.wav',
+        'confirm_number.wav',
+        'callback_returned.wav',
+        'callback_initiated.wav',
+        'callback_confirm.wav',
+    ];
+
+    if (!is_dir($dstDir)) {
+        @mkdir($dstDir, 0755, true);
+        @chown($dstDir, 'asterisk');
+        @chgrp($dstDir, 'asterisk');
+    }
+
+    $defaultAnnouncementFormats = ['wav', 'ulaw', 'alaw'];
+
+    if (is_dir($srcDir)) {
+        foreach ($defaultAnnouncements as $baseName) {
+            $base = basename($baseName, '.wav');
+            foreach ($defaultAnnouncementFormats as $fmt) {
+                $fileName = $base . '.' . $fmt;
+                $src = $srcDir . '/' . $fileName;
+                $dst = $dstDir . '/' . $fileName;
+                if (file_exists($src)) {
+                    $changed = !file_exists($dst) || md5_file($src) !== md5_file($dst);
+                    if ($changed) {
+                        @copy($src, $dst);
+                        @chown($dst, 'asterisk');
+                        @chgrp($dst, 'asterisk');
+                        @chmod($dst, 0664);
+                        out("Installed default announcement: $fileName");
+                    }
+                } else {
+                    out("Warning: default announcement missing: $src");
+                }
+            }
+        }
+    } else {
+        out("Warning: announcements directory not found at $srcDir");
+    }
+} catch (\Throwable $e) {
+    out("Default announcement install error: " . $e->getMessage());
 }
 
 /* -------------------------------------------------------------------
@@ -183,37 +259,49 @@ try {
 
 ; Queue Callback Outbound Context - Auto-generated
 [queuecallback-outbound]
-exten => _X.,1,NoOp(Processing callback for ${EXTEN})
+exten => s,1,NoOp(QCB: Processing customer-first callback for queue ${CALLBACK_QUEUE_ID})
 same => n,Set(CALLERID(name)=Queue Callback)
 same => n,Answer()
 same => n,Wait(1)
 same => n,GotoIf($["${CALLBACK_RETURN_MSG}" != ""]?custom_msg)
-same => n,Playback(queue-thankyou)
-same => n,Playback(pls-wait-connect-call)
+same => n,Playback(custom/callback_returned)
 same => n,Goto(connect_queue)
 same => n(custom_msg),Playback(${CALLBACK_RETURN_MSG})
-same => n(connect_queue),Goto(ext-queues,${CALLBACK_QUEUE_ID},1)
+same => n(connect_queue),Set(__CALLBACK_RETURN=1)
+same => n,Goto(ext-queues,${CALLBACK_QUEUE_ID},1)
 
 ; Queue Callback Agent Outbound Context - Auto-generated
 [queuecallback-agent-outbound]
-exten => s,1,NoOp(Processing agent-first callback for queue ${CALLBACK_QUEUE_ID})
+exten => s,1,NoOp(QCB: Processing agent-first callback for queue ${CALLBACK_QUEUE_ID})
+same => n,Set(CALLERID(name)=Queue Callback)
 same => n,Answer()
 same => n,Wait(1)
 same => n,Playback(you-will-be-connected-to-a-customer)
-same => n,Dial(Local/${CALLBACK_CUSTOMER_NUM}@from-internal,,Ttr)
+same => n,Set(__CALLBACK_RETURN_MSG=${CALLBACK_RETURN_MSG})
+same => n,Set(__CALLBACK_CUSTOMER_NUM=${CALLBACK_CUSTOMER_NUM})
+same => n,Set(__CALLBACK_QUEUE_ID=${CALLBACK_QUEUE_ID})
+same => n,Dial(${CALLBACK_CUSTOMER_CHANNEL},30,TtrU(qcb-customer-confirm))
 same => n,Hangup()
+
+[qcb-customer-confirm]
+exten => s,1,NoOp(QCB: Customer callback message for callback ${CALLBACK_ID})
+same => n,GotoIf($["${CALLBACK_RETURN_MSG}" != ""]?play_return)
+same => n,Playback(custom/callback_returned)
+same => n,Goto(done)
+same => n(play_return),Playback(${CALLBACK_RETURN_MSG})
+same => n(done),Return()
 
 DP;
 
     $custom = '/etc/asterisk/extensions_custom.conf';
     $existing = file_exists($custom) ? file_get_contents($custom) : '';
 
-    // Idempotent: only append once
+    // Idempotent: only append contexts that don't exist yet
     $needs_outbound = (strpos($existing, '[queuecallback-outbound]') === false);
     $needs_agent = (strpos($existing, '[queuecallback-agent-outbound]') === false);
+    $needs_cust = (strpos($existing, '[qcb-customer-confirm]') === false);
 
-    if ($needs_outbound || $needs_agent) {
-        // If one exists but not the other, just append the full block (safe)
+    if ($needs_outbound || $needs_agent || $needs_cust) {
         file_put_contents($custom, $existing . $dialplan, LOCK_EX);
         out("Added outbound callback dialplan contexts");
     } else {

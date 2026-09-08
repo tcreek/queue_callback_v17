@@ -36,8 +36,7 @@ $cron_schedule ??= 'never';
 			<div class="row">
 				<div class="form-group">
 					<div class="col-md-3">
-						<label class="control-label" for="enabledw"><?php echo _("Stats Reset") ?></label>
-						<i class="fa fa-question-circle fpbx-help-icon" data-for="enabledw"></i>
+						<label class="control-label" for="enabledw"><?php echo _("Stats Reset") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="enabledw"></i></label>
 					</div>
 					<div class="col-md-9 radioset">
 						<span class="radioset">
@@ -66,8 +65,7 @@ $cron_schedule ??= 'never';
 			<div class="row">
 				<div class="form-group">
 					<div class="col-md-3">
-						<label class="control-label" for="cron_randomw"><?php echo _("Random") ?></label>
-						<i class="fa fa-question-circle fpbx-help-icon" data-for="cron_randomw"></i>
+						<label class="control-label" for="cron_randomw"><?php echo _("Random") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="cron_randomw"></i></label>
 					</div>
 					<div class="col-md-9 radioset form-inline">
 						<input type="radio" name="cron_random" id="cron_randomyes" value="true" <?php echo ($cron_random == "true"?"CHECKED":"") ?>>
@@ -100,8 +98,7 @@ $cron_schedule ??= 'never';
 			<div class="row">
 				<div class="form-group">
 					<div class="col-md-3">
-						<label class="control-label" for="runw"><?php echo _("RUN") ?></label>
-						<i class="fa fa-question-circle fpbx-help-icon" data-for="runw"></i>
+						<label class="control-label" for="runw"><?php echo _("RUN") ?> <i class="fa fa-question-circle fpbx-help-icon" data-for="runw"></i></label>
 					</div>
 					<div class="col-md-9">
 						<div id="cron" class="form-inline"></div>
