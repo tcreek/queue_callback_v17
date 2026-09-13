@@ -420,15 +420,16 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         $current = preg_replace('/\n; BEGIN QCB_DB AUTO[\s\S]*?; END QCB_DB AUTO\n/s', '', $current);
 
         $buf = "\n; BEGIN QCB_DB AUTO (generated " . date('Y-m-d H:i:s') . ")\n";
+        $freqSecMap = [];
         foreach ($configs as $c) {
             $qid = $c['queue_id'];
             $ann = $c['announce_file'];
             $freqMin = (int)($c['announce_frequency'] ?? 1);
             $freqSec = max(1, $freqMin) * 60;
+            $freqSecMap[$qid] = $freqSec;
 
             $buf .= "[$qid](+)\n";
             $buf .= "context=queuecallback-$qid\n";
-            $buf .= "dtmf_features=0-9*#\n";
             if (!empty($ann)) {
                 $buf .= "periodic-announce=$ann\n";
                 $buf .= "periodic-announce-frequency=$freqSec\n";
@@ -443,11 +444,19 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         @unlink($tmp);
         @chown($qpcPath, 'asterisk'); @chgrp($qpcPath, 'asterisk'); @chmod($qpcPath, 0664);
 
+        foreach ($freqSecMap as $qid => $freqSec) {
+            try {
+                $this->db->prepare("REPLACE INTO queues_details (id, keyword, data, flags) VALUES (?, 'periodic-announce-frequency', ?, 0)")->execute([$qid, $freqSec]);
+            } catch (\Exception $e) {
+                freepbx_log(FPBX_LOG_WARNING, "Queue Callback: Could not update periodic-announce-frequency for $qid: " . $e->getMessage());
+            }
+        }
+
         freepbx_log(FPBX_LOG_INFO, "Queue Callback: Wrote " . count($configs) . " queue sections to $qpcPath");
     }
 
     /**
-     * UPDATED: confirm prompt uses Background() so DTMF during audio is captured.
+     * UPDATED: confirm prompt uses Read with n option so DTMF during audio is captured.
      * Also adds TIMEOUTs and t/i handlers for better UX.
      */
     private function generateExtensionsCustomWorking(array $configs): void {
@@ -461,6 +470,8 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             $content = preg_replace('/\n\[qcb-handler-' . preg_quote($qid, '/') . '\][\s\S]*?(?=\n\[|\z)/', '', $content);
         }
         $content = preg_replace('/\n\[qcb-hangup\][\s\S]*?(?=\n\[|\z)/', '', $content);
+        $content = preg_replace('/\n\[queuecallback-agent-outbound\][\s\S]*?(?=\n\[|\z)/', '', $content);
+        $content = preg_replace('/\n\[qcb-customer-confirm\][\s\S]*?(?=\n\[|\z)/', '', $content);
         // Remove stale [ext-queues] override with QCALLBACK QUEUE ROUTES markers
         $content = preg_replace('/\n; BEGIN QCALLBACK QUEUE ROUTES.*?; END QCALLBACK QUEUE ROUTES\n/s', '', $content);
         // Remove stale contexts from earlier module versions
@@ -536,7 +547,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
                     $handler .= " same => n,Playback(please-enter-your)\n";
                     $handler .= " same => n,Playback(at-following-number)\n";
                 }
-                $handler .= " same => n,Read(ALTNUM,beep,10,,,10)\n";
+                $handler .= " same => n,Read(ALTNUM,beep,10,,,35)\n";
                 $handler .= " same => n,GotoIf(\$[\"\${ALTNUM}\" = \"\"]?alt,1)\n";
                 $handler .= " same => n,Set(CALLBACK_NUMBER=\${FILTER(0-9,\${ALTNUM})})\n";
                 $handler .= " same => n,Goto(queuecallback-$qid,store,1)\n";
@@ -554,13 +565,35 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             $content .= $handler;
         }
 
+        // Agent-first outbound callback context
+        $content .= "\n[queuecallback-agent-outbound]\n";
+        $content .= "exten => s,1,NoOp(QCB: Processing agent-first callback for queue \${CALLBACK_QUEUE_ID})\n";
+        $content .= " same => n,Set(CALLERID(name)=Queue Callback)\n";
+        $content .= " same => n,Answer()\n";
+        $content .= " same => n,Wait(1)\n";
+        $content .= " same => n,Playback(you-will-be-connected-to-a-customer)\n";
+        $content .= " same => n,Set(__CALLBACK_RETURN_MSG=\${CALLBACK_RETURN_MSG})\n";
+        $content .= " same => n,Set(__CALLBACK_CUSTOMER_NUM=\${CALLBACK_CUSTOMER_NUM})\n";
+        $content .= " same => n,Dial(\${CALLBACK_CUSTOMER_CHANNEL},30,TtrU(qcb-customer-confirm))\n";
+        $content .= " same => n,Hangup()\n\n";
+
+        // Customer confirmation subroutine (agent-first flow)
+        // Play Return Call Announcement then connect the call
+        $content .= "[qcb-customer-confirm]\n";
+        $content .= "exten => s,1,NoOp(QCB: Customer callback confirm for callback \${CALLBACK_ID})\n";
+        $content .= " same => n,GotoIf(\$[\"\${CALLBACK_RETURN_MSG}\" != \"\"]?play_return)\n";
+        $content .= " same => n,Playback(custom/callback_returned)\n";
+        $content .= " same => n,Return()\n";
+        $content .= " same => n(play_return),Playback(\${CALLBACK_RETURN_MSG})\n";
+        $content .= " same => n,Return()\n\n";
+
         $tmp = '/tmp/extensions_custom_' . getmypid() . '.tmp';
         file_put_contents($tmp, $content);
         copy($tmp, $ecPath);
         @unlink($tmp);
         @chown($ecPath, 'asterisk'); @chgrp($ecPath, 'asterisk'); @chmod($ecPath, 0664);
 
-        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Generated handler contexts in $ecPath (Background() confirm)");
+        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Generated handler contexts in $ecPath (Read n-option confirm)");
     }
 
     private function isValidKey($key): bool {

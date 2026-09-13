@@ -2,7 +2,7 @@
 <module>
   <rawname>qcallback</rawname>
   <name>Queue Callback</name>
-  <version>17.0.2.2 Beta</version>
+  <version>17.0.3.1 Beta</version>
   <publisher>Community</publisher>
   <license>GPLv3+</license>
   <licenselink>https://www.gnu.org/licenses/gpl-3.0.html</licenselink>
@@ -18,6 +18,8 @@
   </description>
   <more-info>https://example.com/</more-info>
   <changelog>
+    * 17.0.3.1 Beta - Bug fixes
+    * 17.0.3.0 Beta - Additions and various bug fixes and improvements
     * 17.0.2.2 Beta - Fixed bug in process_callback.php in Regex evaluation
     * 17.0.2.1 Beta - Fixed typos and bugs in agi files
     * 17.0.2 Beta - Fixed callback completion handler, changed processing interval to seconds, fixed AGI variable names

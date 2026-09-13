@@ -284,12 +284,12 @@ same => n,Dial(${CALLBACK_CUSTOMER_CHANNEL},30,TtrU(qcb-customer-confirm))
 same => n,Hangup()
 
 [qcb-customer-confirm]
-exten => s,1,NoOp(QCB: Customer callback message for callback ${CALLBACK_ID})
-same => n,GotoIf($["${CALLBACK_RETURN_MSG}" != ""]?play_return)
-same => n,Playback(custom/callback_returned)
-same => n,Goto(done)
-same => n(play_return),Playback(${CALLBACK_RETURN_MSG})
-same => n(done),Return()
+exten => s,1,NoOp(QCB: Customer callback confirm for callback ${CALLBACK_ID})
+ same => n,GotoIf($["${CALLBACK_RETURN_MSG}" != ""]?play_return)
+ same => n,Playback(custom/callback_returned)
+ same => n,Return()
+ same => n(play_return),Playback(${CALLBACK_RETURN_MSG})
+ same => n,Return()
 
 DP;
 

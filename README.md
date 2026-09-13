@@ -7,7 +7,7 @@ Callers can request a callback instead of waiting on hold. The processor only re
 
 ## Status
 
-🚧 **Version 17.0.2 Beta 2**  
+🚧 **Version 17.0.3 Beta 3**  
 Core logic should be fully functional, but some behaviors still need refinement (see **Known Issues**).
 
 ---
@@ -61,11 +61,9 @@ This module will function on any FreePBX-based system, including:
 
 ---
 
-## Known Issues (Beta 2)
+## Known Issues (Beta 3)
 
-- **Return announcement not playing**  
-  The optional return message/recording is not currently played to the customer upon answer in Agent-first mode.  
-
+None known yet
 
 
 
