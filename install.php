@@ -320,10 +320,10 @@ try {
 #!/usr/bin/php
 <?php
 require_once('/etc/freepbx.conf');
-$qcallback = \FreePBX::create()->Qcallback ?? null;
-if ($qcallback && method_exists($qcallback, 'processIntelligentCallbacks')) {
-    $n = $qcallback->processIntelligentCallbacks();
-    if ($n > 0) { error_log("Intelligent Queue Callback: processed $n"); }
+// Delegate to the working process_callbacks.php
+$script = __DIR__ . '/process_callbacks.php';
+if (file_exists($script)) {
+    passthru('/usr/bin/php ' . escapeshellarg($script) . ' 2>&1');
 }
 PHP;
     file_put_contents($proc, $procContent);
@@ -348,7 +348,7 @@ PHP;
 
     $new = implode("\n", $filtered) . "\n";
     file_put_contents('/tmp/new_crontab', $new);
-    shell_exec('crontab /tmp/new_crontab');
+    shell_exec('crontab /tmp/new_crontab 2>/dev/null');
     @unlink('/tmp/new_crontab');
 
     out("Installed cron for intelligent processor");
