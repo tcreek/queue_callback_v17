@@ -101,7 +101,14 @@ foreach ($ready_callbacks as $callback) {
 
     // Determine channel based on whether callback number is internal or extension
     $is_internal = (strlen($callback['callback_number']) <= 4 && is_numeric($callback['callback_number']));
-    $channel = $is_internal ? "PJSIP/{$callback['callback_number']}" : "PJSIP/Skyetel-1/{$callback['callback_number']}";
+    if ($is_internal) {
+        $channel = "PJSIP/{$callback['callback_number']}";
+    } else {
+        $outbound_route_id = $callback['outbound_route_id'] ?? 1;
+        $trunk_row = $db->getRow("SELECT t.name FROM outbound_route_trunks ort JOIN trunks t ON ort.trunk_id = t.trunkid WHERE ort.route_id = ? ORDER BY ort.seq LIMIT 1", [$outbound_route_id], PDO::FETCH_ASSOC);
+        $trunk_name = $trunk_row['name'] ?? 'Skyetel-1';
+        $channel = "PJSIP/{$callback['callback_number']}@{$trunk_name}";
+    }
     
     if ($call_first === 'agent') {
         // Call agent first - get available agents from the queue
