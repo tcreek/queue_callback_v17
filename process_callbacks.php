@@ -99,15 +99,13 @@ $ready_callbacks = $filtered;
 foreach ($ready_callbacks as $callback) {
     $call_first = $callback['call_first'] ?? 'customer';
 
-    // Determine channel based on whether callback number is internal or extension
+    // Determine channel: internal extensions use PJSIP directly;
+    // external numbers use Local/ via FreePBX outbound route selection
     $is_internal = (strlen($callback['callback_number']) <= 4 && is_numeric($callback['callback_number']));
     if ($is_internal) {
         $channel = "PJSIP/{$callback['callback_number']}";
     } else {
-        $outbound_route_id = $callback['outbound_route_id'] ?? 1;
-        $trunk_row = $db->getRow("SELECT t.name FROM outbound_route_trunks ort JOIN trunks t ON ort.trunk_id = t.trunkid WHERE ort.route_id = ? ORDER BY ort.seq LIMIT 1", [$outbound_route_id], PDO::FETCH_ASSOC);
-        $trunk_name = $trunk_row['name'] ?? 'Skyetel-1';
-        $channel = "PJSIP/{$callback['callback_number']}@{$trunk_name}";
+        $channel = "Local/{$callback['callback_number']}@from-internal";
     }
     
     if ($call_first === 'agent') {
@@ -193,10 +191,6 @@ foreach ($ready_callbacks as $callback) {
             $call_file_content .= "SetVar: __CALLBACK_CUSTOMER_NUM={$callback['callback_number']}\n";
             $call_file_content .= "SetVar: __CALLBACK_RETURN_MSG={$callback['return_message_id']}\n";
             $call_file_content .= "SetVar: __CALLBACK_CUSTOMER_CHANNEL={$channel}\n";
-            $outbound_route_id = $callback['outbound_route_id'] ?? 1;
-            if (!empty($outbound_route_id) && $outbound_route_id != 1) {
-                $call_file_content .= "OutboundRouteID: {$outbound_route_id}\n";
-            }
         } else {
             // No agent found, skip this callback
             error_log("DEBUG: agent_extension empty after parsing. agents count=" . count($agents ?? []));
@@ -209,10 +203,6 @@ foreach ($ready_callbacks as $callback) {
         $call_file_content .= "CallerID: Queue Callback <{$callback['queue_id']}>\n";
         $call_file_content .= "Context: queuecallback-outbound\n";
         $call_file_content .= "Extension: s\n";
-        $outbound_route_id = $callback['outbound_route_id'] ?? 1;
-        if (!empty($outbound_route_id) && $outbound_route_id != 1) {
-            $call_file_content .= "OutboundRouteID: {$outbound_route_id}\n";
-        }
     }
 
     // Common call file content
