@@ -547,7 +547,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
                     $handler .= " same => n,Playback(please-enter-your)\n";
                     $handler .= " same => n,Playback(at-following-number)\n";
                 }
-                $handler .= " same => n,Read(ALTNUM,beep,10,,,35)\n";
+                $handler .= " same => n,Read(ALTNUM,beep,30,,,35)\n";
                 $handler .= " same => n,GotoIf(\$[\"\${ALTNUM}\" = \"\"]?alt,1)\n";
                 $handler .= " same => n,Set(CALLBACK_NUMBER=\${FILTER(0-9,\${ALTNUM})})\n";
                 $handler .= " same => n,Goto(queuecallback-$qid,store,1)\n";
