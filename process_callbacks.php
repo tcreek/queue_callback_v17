@@ -98,6 +98,7 @@ $ready_callbacks = $filtered;
 
 foreach ($ready_callbacks as $callback) {
     $call_first = $callback['call_first'] ?? 'customer';
+    $agent_extension = '';
 
     // Determine channel: internal extensions use PJSIP directly;
     // external numbers use Local/ via FreePBX outbound route selection
