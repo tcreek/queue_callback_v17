@@ -67,6 +67,60 @@ if (isset($_GET['saved']) && $_GET['saved'] == '1') {
 if (isset($_GET['error'])) {
     echo '<div class="alert alert-danger">Error saving configuration: ' . htmlentities($_GET['error']) . '</div>';
 }
+
+// Security actions
+$sec_msg = '';
+$sec_err = '';
+$qcb = FreePBX::Qcallback();
+if ($_POST['sec_action'] ?? '' === 'add_entry') {
+    $pattern = trim($_POST['pattern'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    $area_code = trim($_POST['area_code'] ?? '');
+    $enabled = isset($_POST['enabled']) ? 1 : 0;
+    $sort_order = (int)($_POST['sort_order'] ?? 0);
+    if (empty($pattern) || empty($description)) {
+        $sec_err = _('Pattern and Description are required');
+    } else {
+        try {
+            $qcb->addSecurityEntry(['pattern'=>$pattern,'description'=>$description,'area_code'=>$area_code,'enabled'=>$enabled,'sort_order'=>$sort_order]);
+            $sec_msg = _('Entry added');
+        } catch (\Throwable $e) { $sec_err = $e->getMessage(); }
+    }
+} elseif ($_POST['sec_action'] ?? '' === 'update_entry') {
+    $id = (int)($_POST['id'] ?? 0);
+    $pattern = trim($_POST['pattern'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    $area_code = trim($_POST['area_code'] ?? '');
+    $enabled = isset($_POST['enabled']) ? 1 : 0;
+    $sort_order = (int)($_POST['sort_order'] ?? 0);
+    if (empty($pattern) || empty($description)) {
+        $sec_err = _('Pattern and Description are required');
+    } else {
+        try {
+            $qcb->updateSecurityEntry($id, ['pattern'=>$pattern,'description'=>$description,'area_code'=>$area_code,'enabled'=>$enabled,'sort_order'=>$sort_order]);
+            $sec_msg = _('Entry updated');
+        } catch (\Throwable $e) { $sec_err = $e->getMessage(); }
+    }
+} elseif ($_POST['sec_action'] ?? '' === 'delete_entry') {
+    $id = (int)($_POST['id'] ?? 0);
+    if ($id > 0) {
+        try {
+            $qcb->deleteSecurityEntry($id);
+            $sec_msg = _('Entry deleted');
+        } catch (\Throwable $e) { $sec_err = $e->getMessage(); }
+    }
+} elseif ($_POST['sec_action'] ?? '' === 'toggle_entry') {
+    $id = (int)($_POST['id'] ?? 0);
+    $enabled = isset($_POST['enabled']) ? 1 : 0;
+    if ($id > 0) {
+        try {
+            $qcb->toggleSecurityEntry($id, (bool)$enabled);
+            $sec_msg = _('Entry updated');
+        } catch (\Throwable $e) { $sec_err = $e->getMessage(); }
+    }
+}
+if ($sec_msg) { echo '<div class="alert alert-success">' . htmlentities($sec_msg) . '</div>'; }
+if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err) . '</div>'; }
 ?>
 
 <div class="row">
@@ -88,6 +142,11 @@ if (isset($_GET['error'])) {
                     <li role="presentation">
                         <a href="#announcements-tab" aria-controls="announcements-tab" role="tab" data-toggle="tab">
                             <i class="fa fa-volume-up"></i> <?php echo _("Announcements") ?>
+                        </a>
+                    </li>
+                    <li role="presentation">
+                        <a href="#security-tab" aria-controls="security-tab" role="tab" data-toggle="tab">
+                            <i class="fa fa-shield-alt"></i> <?php echo _("Security") ?>
                         </a>
                     </li>
                 </ul>
@@ -381,7 +440,103 @@ if (isset($_GET['error'])) {
                             </div>
                             
                         </div> <!-- End Announcements Tab -->
-                        
+
+                        <!-- Security Tab -->
+                        <div role="tabpanel" class="tab-pane" id="security-tab">
+                            <h3><i class="fa fa-shield-alt"></i> <?php echo _("Toll Fraud Prevention - Blocklist") ?></h3>
+                            <p class="text-muted"><?php echo _("Block callbacks to specific area/country codes to prevent toll fraud. Caribbean/High-risk NANP entries are enabled by default.") ?></p>
+
+                            <?php $sec_entries = $qcb->getSecurityEntries(); ?>
+
+                            <div class="table-responsive" style="margin-bottom: 20px;">
+                                <table class="table table-striped table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th><?php echo _("Pattern") ?></th>
+                                            <th><?php echo _("Description") ?></th>
+                                            <th><?php echo _("Area Code") ?></th>
+                                            <th><?php echo _("Enabled") ?></th>
+                                            <th><?php echo _("Actions") ?></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php if (empty($sec_entries)): ?>
+                                            <tr><td colspan="5" class="text-center"><?php echo _("No entries configured") ?></td></tr>
+                                        <?php else: ?>
+                                            <?php foreach ($sec_entries as $se): ?>
+                                                <tr>
+                                                    <td><code><?php echo htmlentities($se['pattern']) ?></code></td>
+                                                    <td><?php echo htmlentities($se['description']) ?></td>
+                                                    <td><?php echo htmlentities($se['area_code']) ?></td>
+                                                    <td>
+                                                        <form method="post" style="display:inline">
+                                                            <input type="hidden" name="sec_action" value="toggle_entry">
+                                                            <input type="hidden" name="id" value="<?php echo (int)$se['id'] ?>">
+                                                            <label class="switch">
+                                                                <input type="checkbox" onchange="this.form.submit()" <?php echo $se['enabled'] ? 'checked' : '' ?>>
+                                                                <span class="slider"></span>
+                                                            </label>
+                                                        </form>
+                                                    </td>
+                                                    <td>
+                                                        <button class="btn btn-xs btn-danger btn-security-delete" data-id="<?php echo (int)$se['id'] ?>" data-desc="<?php echo htmlentities($se['description'], ENT_QUOTES) ?>">
+                                                            <i class="fa fa-trash"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <h4><?php echo _("Add New Entry") ?></h4>
+                            <form method="post" class="form-horizontal">
+                                <input type="hidden" name="sec_action" value="add_entry">
+                                <div class="form-group">
+                                    <label class="col-sm-3 control-label"><?php echo _("Asterisk Pattern") ?></label>
+                                    <div class="col-sm-9">
+                                        <input type="text" class="form-control" name="pattern" placeholder="_268NXXXXXX" required>
+                                        <p class="help-block"><?php echo _("Example: _268NXXXXXX blocks any 10-digit Antigua number. N=2-9, X=0-9.") ?></p>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="col-sm-3 control-label"><?php echo _("Description") ?></label>
+                                    <div class="col-sm-9">
+                                        <input type="text" class="form-control" name="description" placeholder="Antigua and Barbuda (268)" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label class="col-sm-3 control-label"><?php echo _("Area Code") ?></label>
+                                    <div class="col-sm-9">
+                                        <input type="text" class="form-control" name="area_code" placeholder="268" maxlength="10">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <div class="col-sm-offset-3 col-sm-9">
+                                        <label class="checkbox-inline">
+                                            <input type="checkbox" name="enabled" checked> <?php echo _("Enabled") ?>
+                                        </label>
+                                        <label class="checkbox-inline" style="margin-left: 20px;">
+                                            <input type="number" class="form-control" name="sort_order" value="0" min="0" max="999" style="width: 80px; display: inline; margin-right: 5px;"> <?php echo _("Sort Order") ?>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <div class="col-sm-offset-3 col-sm-9">
+                                        <button type="submit" class="btn btn-danger">
+                                            <i class="fa fa-plus"></i> <?php echo _("Add Blocklist Entry") ?>
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+
+                            <div class="alert alert-warning">
+                                <strong><?php echo _("Note:") ?></strong> <?php echo _("Blocked numbers will be rejected when callbacks are processed. The system checks the blocklist before placing any callback call.") ?>
+                            </div>
+                        </div>
+                        <!-- End Security Tab -->
+
                     </div> <!-- End tab-content -->
                     
                     <!-- Save Button (outside tabs) -->
