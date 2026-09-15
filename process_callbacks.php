@@ -96,11 +96,11 @@ foreach ($ready_callbacks as $cb) {
 }
 $ready_callbacks = $filtered;
 
+$qcallback = FreePBX::Qcallback();
 foreach ($ready_callbacks as $callback) {
     $call_first = $callback['call_first'] ?? 'customer';
 
     // Security block check - skip blocked numbers
-    $qcallback = FreePBX::Qcallback();
     if ($qcallback->isNumberBlocked($callback['callback_number'])) {
         error_log("Queue Callback: SKIPPED callback ID {$callback['id']} - number {$callback['callback_number']} is blocked by security blocklist");
         $db->prepare("UPDATE queuecallback_requests SET status='cancelled' WHERE id=?")->execute([$callback['id']]);
