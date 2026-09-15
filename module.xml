@@ -6,9 +6,9 @@
   <publisher>Community</publisher>
   <license>GPLv3+</license>
   <licenselink>https://www.gnu.org/licenses/gpl-3.0.html</licenselink>
-  <category>Reports</category>
+  <category>Applications</category>
   <menuitems>
-    <qcallback needsenginedb="yes">Scheduled Queue Callbacks</qcallback>
+    <qcallback needsenginedb="yes">Queue Callback</qcallback>
   </menuitems>
   <depends>
     <module>framework ge 17.0.0</module>

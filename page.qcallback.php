@@ -268,24 +268,8 @@ if (isset($_REQUEST['action'])) {
 
 $heading = _("Queue Callback Management");
 
-$view = isset($request['view']) ? $request['view'] : 'reports';
+$view = isset($request['view']) ? $request['view'] : '';
 $queue_id = isset($request['queue_id']) ? $request['queue_id'] : '';
-
-$views = array(
-    'reports' => _('Scheduled Queue Callbacks'),
-);
-if (!empty($queue_id)) {
-    $views['queue'] = _('Pending Callbacks');
-    $views['config'] = _('Configure');
-}
-$active = array_key_exists($view, $views) ? $view : '';
-$tab_html = '<ul class="nav nav-tabs">';
-foreach ($views as $v => $label) {
-    $url = '?display=qcallback' . ($v !== '' ? '&view=' . $v : '') . ($queue_id ? '&queue_id=' . urlencode($queue_id) : '');
-    $class = $view === $v ? 'class="active"' : '';
-    $tab_html .= "<li $class><a href=\"$url\">$label</a></li>";
-}
-$tab_html .= '</ul>';
 
 switch($view) {
     case "queue":
@@ -299,7 +283,7 @@ switch($view) {
             $content = '<div class="alert alert-danger">' . _("Queue ID required") . '</div>';
         }
         break;
-        
+
     case "config":
         if (!empty($queue_id)) {
             $heading .= " - " . _("Configure Queue") . " " . $queue_id;
@@ -329,7 +313,6 @@ switch($view) {
 ?>
 <div class="container-fluid">
     <h1><?php echo $heading ?></h1>
-    <?php echo $tab_html ?>
     <div class="row">
         <div class="col-sm-12">
             <div class="fpbx-container">
