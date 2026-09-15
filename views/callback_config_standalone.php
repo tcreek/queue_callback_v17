@@ -452,8 +452,8 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                                 <table class="table table-striped table-hover">
                                     <thead>
                                         <tr>
-                                            <th><?php echo _("Pattern") ?></th>
                                             <th><?php echo _("Description") ?></th>
+                                            <th><?php echo _("Asterisk Pattern") ?></th>
                                             <th><?php echo _("Area Code") ?></th>
                                             <th><?php echo _("Enabled") ?></th>
                                             <th><?php echo _("Actions") ?></th>
@@ -465,8 +465,8 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                                         <?php else: ?>
                                             <?php foreach ($sec_entries as $se): ?>
                                                 <tr>
+                                                    <td><strong><?php echo htmlentities($se['description']) ?></strong></td>
                                                     <td><code><?php echo htmlentities($se['pattern']) ?></code></td>
-                                                    <td><?php echo htmlentities($se['description']) ?></td>
                                                     <td><?php echo htmlentities($se['area_code']) ?></td>
                                                     <td>
                                                         <form method="post" style="display:inline">
@@ -479,9 +479,13 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                                                         </form>
                                                     </td>
                                                     <td>
-                                                        <button class="btn btn-xs btn-danger btn-security-delete" data-id="<?php echo (int)$se['id'] ?>" data-desc="<?php echo htmlentities($se['description'], ENT_QUOTES) ?>">
-                                                            <i class="fa fa-trash"></i>
-                                                        </button>
+                                                        <form method="post" style="display:inline" onsubmit="return confirm('<?php echo _("Delete") ?> <?php echo htmlentities($se['description'], ENT_QUOTES) ?>?');">
+                                                            <input type="hidden" name="sec_action" value="delete_entry">
+                                                            <input type="hidden" name="id" value="<?php echo (int)$se['id'] ?>">
+                                                            <button type="submit" class="btn btn-xs btn-danger">
+                                                                <i class="fa fa-trash"></i>
+                                                            </button>
+                                                        </form>
                                                     </td>
                                                 </tr>
                                             <?php endforeach; ?>
@@ -494,22 +498,23 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                             <form method="post" class="form-horizontal">
                                 <input type="hidden" name="sec_action" value="add_entry">
                                 <div class="form-group">
-                                    <label class="col-sm-3 control-label"><?php echo _("Asterisk Pattern") ?></label>
+                                    <label class="col-sm-3 control-label"><?php echo _("Human Description") ?></label>
                                     <div class="col-sm-9">
-                                        <input type="text" class="form-control" name="pattern" placeholder="_268NXXXXXX" required>
-                                        <p class="help-block"><?php echo _("Example: _268NXXXXXX blocks any 10-digit Antigua number. N=2-9, X=0-9.") ?></p>
+                                        <input type="text" class="form-control" name="description" placeholder="Antigua and Barbuda" required>
+                                        <p class="help-block"><?php echo _("Human readable name for this blocklist entry. Example: Antigua and Barbuda, Jamaica, etc.") ?></p>
                                     </div>
                                 </div>
                                 <div class="form-group">
-                                    <label class="col-sm-3 control-label"><?php echo _("Description") ?></label>
+                                    <label class="col-sm-3 control-label"><?php echo _("Asterisk Pattern") ?></label>
                                     <div class="col-sm-9">
-                                        <input type="text" class="form-control" name="description" placeholder="Antigua and Barbuda (268)" required>
+                                        <input type="text" class="form-control" name="pattern" placeholder="_268NXXXXXX" required>
+                                        <p class="help-block"><?php echo _("Asterisk dial plan pattern. _NXXNXXXXXX = any 10-digit NANP. N=2-9, X=0-9. Example: _876NXXXXXX = Jamaica.") ?></p>
                                     </div>
                                 </div>
                                 <div class="form-group">
                                     <label class="col-sm-3 control-label"><?php echo _("Area Code") ?></label>
                                     <div class="col-sm-9">
-                                        <input type="text" class="form-control" name="area_code" placeholder="268" maxlength="10">
+                                        <input type="text" class="form-control" name="area_code" placeholder="876" maxlength="10">
                                     </div>
                                 </div>
                                 <div class="form-group">
