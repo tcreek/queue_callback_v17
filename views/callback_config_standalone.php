@@ -76,13 +76,14 @@ if ($_POST['sec_action'] ?? '' === 'add_entry') {
     $pattern = trim($_POST['pattern'] ?? '');
     $description = trim($_POST['description'] ?? '');
     $area_code = trim($_POST['area_code'] ?? '');
+    $queue_id = trim($_POST['queue_id'] ?? $queue_id);
     $enabled = isset($_POST['enabled']) ? 1 : 0;
     $sort_order = (int)($_POST['sort_order'] ?? 0);
     if (empty($pattern) || empty($description)) {
         $sec_err = _('Pattern and Description are required');
     } else {
         try {
-            $qcb->addSecurityEntry(['pattern'=>$pattern,'description'=>$description,'area_code'=>$area_code,'enabled'=>$enabled,'sort_order'=>$sort_order]);
+            $qcb->addSecurityEntry(['pattern'=>$pattern,'description'=>$description,'area_code'=>$area_code,'queue_id'=>$queue_id,'enabled'=>$enabled,'sort_order'=>$sort_order]);
             $sec_msg = _('Entry added');
         } catch (\Throwable $e) { $sec_err = $e->getMessage(); }
     }
@@ -91,13 +92,14 @@ if ($_POST['sec_action'] ?? '' === 'add_entry') {
     $pattern = trim($_POST['pattern'] ?? '');
     $description = trim($_POST['description'] ?? '');
     $area_code = trim($_POST['area_code'] ?? '');
+    $queue_id = trim($_POST['queue_id'] ?? '');
     $enabled = isset($_POST['enabled']) ? 1 : 0;
     $sort_order = (int)($_POST['sort_order'] ?? 0);
     if (empty($pattern) || empty($description)) {
         $sec_err = _('Pattern and Description are required');
     } else {
         try {
-            $qcb->updateSecurityEntry($id, ['pattern'=>$pattern,'description'=>$description,'area_code'=>$area_code,'enabled'=>$enabled,'sort_order'=>$sort_order]);
+            $qcb->updateSecurityEntry($id, ['pattern'=>$pattern,'description'=>$description,'area_code'=>$area_code,'queue_id'=>$queue_id,'enabled'=>$enabled,'sort_order'=>$sort_order]);
             $sec_msg = _('Entry updated');
         } catch (\Throwable $e) { $sec_err = $e->getMessage(); }
     }
@@ -444,9 +446,29 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                         <!-- Security Tab -->
                         <div role="tabpanel" class="tab-pane" id="security-tab">
                             <h3><i class="fa fa-shield-alt"></i> <?php echo _("Toll Fraud Prevention - Blocklist") ?></h3>
-                            <p class="text-muted"><?php echo _("Block callbacks to Caribbean area codes to prevent toll fraud. Entry patterns use Asterisk dial plan format.") ?></p>
+                            <p class="text-muted"><?php echo _("Block callbacks to Caribbean area codes to prevent toll fraud. Patterns use Asterisk dial plan format.") ?></p>
 
-                            <?php $sec_entries = $qcb->getSecurityEntries(); ?>
+                            <div class="row" style="margin-bottom: 15px;">
+                                <div class="col-md-8">
+                                    <?php $sec_entries = $qcb->getSecurityEntries($queue_id); ?>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="panel panel-info">
+                                        <div class="panel-heading">
+                                            <h4 class="panel-title"><i class="fa fa-globe"></i> <?php echo _("Adding International Numbers") ?></h4>
+                                        </div>
+                                        <div class="panel-body">
+                                            <p class="text-muted"><?php echo _("To block other countries, add entries using Asterisk patterns:") ?></p>
+                                            <ul class="list-unstyled">
+                                                <li><strong>Country code + area code</strong> - e.g., <code>_52NXXXXX</code> for Mexico (52)</li>
+                                                <li><strong>Full international</strong> - e.g., <code>_44NXXXXXX</code> for UK (44)</li>
+                                                <li><strong>+1 prefix</strong> - e.g., <code>_152NXXXXX</code> for Mexico (+1)</li>
+                                            </ul>
+                                            <p class="text-muted"><?php echo _("Pattern guide: _ = wildcard, N = 2-9, X = 0-9. Use area_code field for categorization.") ?></p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
 
                             <div class="table-responsive" style="margin-bottom: 20px;">
                                 <table class="table table-striped table-hover">
@@ -455,19 +477,23 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                                             <th><?php echo _("Description") ?></th>
                                             <th><?php echo _("Asterisk Pattern") ?></th>
                                             <th><?php echo _("Area Code") ?></th>
+                                            <th><?php echo _("Scope") ?></th>
                                             <th><?php echo _("Enabled") ?></th>
                                             <th><?php echo _("Actions") ?></th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php if (empty($sec_entries)): ?>
-                                            <tr><td colspan="5" class="text-center"><?php echo _("No entries configured") ?></td></tr>
+                                            <tr><td colspan="6" class="text-center"><?php echo _("No entries configured") ?></td></tr>
                                         <?php else: ?>
-                                            <?php foreach ($sec_entries as $se): ?>
+                                            <?php foreach ($sec_entries as $se):
+                                                $scope = !empty($se['queue_id']) ? '<span class="label label-info">Queue ' . htmlentities($se['queue_id']) . '</span>' : '<span class="label label-default">' . _('Global') . '</span>';
+                                            ?>
                                                 <tr>
                                                     <td><strong><?php echo htmlentities($se['description']) ?></strong></td>
                                                     <td><code><?php echo htmlentities($se['pattern']) ?></code></td>
                                                     <td><?php echo htmlentities($se['area_code']) ?></td>
+                                                    <td><?php echo $scope ?></td>
                                                     <td>
                                                         <form method="post" style="display:inline">
                                                             <input type="hidden" name="sec_action" value="toggle_entry">
@@ -497,11 +523,12 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                             <h4><?php echo _("Add New Entry") ?></h4>
                             <form method="post" class="form-horizontal">
                                 <input type="hidden" name="sec_action" value="add_entry">
+                                <input type="hidden" name="queue_id" value="<?php echo htmlentities($queue_id) ?>">
                                 <div class="form-group">
                                     <label class="col-sm-3 control-label"><?php echo _("Human Description") ?></label>
                                     <div class="col-sm-9">
                                         <input type="text" class="form-control" name="description" placeholder="Antigua and Barbuda" required>
-                                        <p class="help-block"><?php echo _("Human readable name for this blocklist entry. Example: Antigua and Barbuda, Jamaica, etc.") ?></p>
+                                        <p class="help-block"><?php echo _("Human readable name. Example: Antigua and Barbuda, Jamaica, UK, etc.") ?></p>
                                     </div>
                                 </div>
                                 <div class="form-group">

@@ -972,10 +972,14 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         }
     }
 
-    public function getSecurityEntries(): array {
+    public function getSecurityEntries(?string $queue_id = null): array {
         try {
-            $stmt = $this->db->prepare("SELECT * FROM queuecallback_security ORDER BY sort_order ASC, id ASC");
-            $stmt->execute();
+            if ($queue_id !== null) {
+                $stmt = $this->db->prepare("SELECT * FROM queuecallback_security WHERE queue_id = ? OR queue_id = '' ORDER BY sort_order ASC, id ASC");
+                $stmt->execute([$queue_id]);
+            } else {
+                $stmt = $this->db->query("SELECT * FROM queuecallback_security ORDER BY sort_order ASC, id ASC");
+            }
             return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         } catch (\Throwable $e) {
             return [];
@@ -994,12 +998,13 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
     }
 
     public function addSecurityEntry(array $data): int {
-        $sql = "INSERT INTO queuecallback_security (pattern, description, area_code, enabled, sort_order, created_at) VALUES (?,?,?,?,?,?)";
+        $sql = "INSERT INTO queuecallback_security (pattern, description, area_code, queue_id, enabled, sort_order, created_at) VALUES (?,?,?,?,?,?,?)";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
             $data['pattern'] ?? '',
             $data['description'] ?? '',
             $data['area_code'] ?? '',
+            $data['queue_id'] ?? '',
             isset($data['enabled']) ? (int)$data['enabled'] : 1,
             (int)($data['sort_order'] ?? 0),
             time()
@@ -1010,12 +1015,13 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
     }
 
     public function updateSecurityEntry(int $id, array $data): bool {
-        $sql = "UPDATE queuecallback_security SET pattern=?, description=?, area_code=?, enabled=?, sort_order=? WHERE id=?";
+        $sql = "UPDATE queuecallback_security SET pattern=?, description=?, area_code=?, queue_id=?, enabled=?, sort_order=? WHERE id=?";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
             $data['pattern'] ?? '',
             $data['description'] ?? '',
             $data['area_code'] ?? '',
+            $data['queue_id'] ?? '',
             isset($data['enabled']) ? (int)$data['enabled'] : 0,
             (int)($data['sort_order'] ?? 0),
             $id
@@ -1037,9 +1043,14 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         return true;
     }
 
-    public function getSecurityBlocklist(): array {
+    public function getSecurityBlocklist(?string $queue_id = null): array {
         try {
-            $stmt = $this->db->query("SELECT pattern, description FROM queuecallback_security WHERE enabled = 1 ORDER BY sort_order ASC");
+            if ($queue_id !== null) {
+                $stmt = $this->db->prepare("SELECT pattern, description FROM queuecallback_security WHERE enabled = 1 AND (queue_id = ? OR queue_id = '') ORDER BY sort_order ASC");
+                $stmt->execute([$queue_id]);
+            } else {
+                $stmt = $this->db->query("SELECT pattern, description FROM queuecallback_security WHERE enabled = 1 ORDER BY sort_order ASC");
+            }
             return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         } catch (\Throwable $e) {
             return [];
@@ -1060,12 +1071,17 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         return $buf;
     }
 
-    public function isNumberBlocked(string $number): bool {
+    public function isNumberBlocked(string $number, ?string $queue_id = null): bool {
         $number = preg_replace('/[^0-9]/', '', $number);
         if (empty($number)) {
             return false;
         }
-        $entries = $this->db->query("SELECT pattern, area_code FROM queuecallback_security WHERE enabled = 1");
+        if ($queue_id !== null) {
+            $entries = $this->db->prepare("SELECT pattern, area_code FROM queuecallback_security WHERE enabled = 1 AND (queue_id = ? OR queue_id = '')");
+            $entries->execute([$queue_id]);
+        } else {
+            $entries = $this->db->query("SELECT pattern, area_code FROM queuecallback_security WHERE enabled = 1");
+        }
         foreach ($entries as $entry) {
             $ac = $entry['area_code'];
             if (empty($ac)) {

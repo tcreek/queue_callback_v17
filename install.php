@@ -136,12 +136,19 @@ try {
                 pattern VARCHAR(20) NOT NULL,
                 description VARCHAR(100) NOT NULL,
                 area_code VARCHAR(10) DEFAULT '',
+                queue_id VARCHAR(20) DEFAULT '',
                 enabled TINYINT(1) DEFAULT 1,
                 sort_order INT DEFAULT 0,
                 created_at INT DEFAULT NULL,
                 updated_at INT DEFAULT NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
             freepbx_log(FPBX_LOG_INFO, "Queue Callback: Created queuecallback_security table");
+        } else {
+            $qc = sql("SHOW COLUMNS FROM `queuecallback_security` LIKE 'queue_id'", "getAll");
+            if (empty($qc)) {
+                sql("ALTER TABLE `queuecallback_security` ADD COLUMN `queue_id` VARCHAR(20) DEFAULT '' AFTER `area_code`");
+                freepbx_log(FPBX_LOG_INFO, "Queue Callback: Added queue_id column to queuecallback_security");
+            }
         }
     } catch (\Throwable $e) {
         freepbx_log(FPBX_LOG_WARNING, "Queue Callback: Could not create queuecallback_security table: " . $e->getMessage());
