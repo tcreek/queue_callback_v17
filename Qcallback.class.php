@@ -472,6 +472,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         $content = preg_replace('/\n\[qcb-hangup\][\s\S]*?(?=\n\[|\z)/', '', $content);
         $content = preg_replace('/\n\[queuecallback-agent-outbound\][\s\S]*?(?=\n\[|\z)/', '', $content);
         $content = preg_replace('/\n\[qcb-customer-confirm\][\s\S]*?(?=\n\[|\z)/', '', $content);
+        $content = preg_replace('/\n\[qcb-complete\][\s\S]*?(?=\n\[|\z)/', '', $content);
         // Remove stale [ext-queues] override with QCALLBACK QUEUE ROUTES markers
         $content = preg_replace('/\n; BEGIN QCALLBACK QUEUE ROUTES.*?; END QCALLBACK QUEUE ROUTES\n/s', '', $content);
         // Remove stale contexts from earlier module versions
@@ -585,6 +586,12 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         $content .= " same => n,Playback(custom/callback_returned)\n";
         $content .= " same => n,Return()\n";
         $content .= " same => n(play_return),Playback(\${CALLBACK_RETURN_MSG})\n";
+        $content .= " same => n,Return()\n\n";
+
+        // Callback completion handler - marks callbacks complete when calls end
+        $content .= "[qcb-complete]\n";
+        $content .= "exten => s,1,NoOp(QCB completing callback ID \${ARG1})\n";
+        $content .= " same => n,AGI(queuecallback-complete.agi,\${ARG1},completed)\n";
         $content .= " same => n,Return()\n\n";
 
         $tmp = '/tmp/extensions_custom_' . getmypid() . '.tmp';
