@@ -6,7 +6,7 @@
   <publisher>Community</publisher>
   <license>GPLv3+</license>
   <licenselink>https://www.gnu.org/licenses/gpl-3.0.html</licenselink>
-  <category>Applications</category>
+  <category>Reports</category>
   <menuitems>
     <qcallback needsenginedb="yes">Queue Callback</qcallback>
   </menuitems>
