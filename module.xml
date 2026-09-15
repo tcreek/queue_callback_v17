@@ -2,7 +2,7 @@
 <module>
   <rawname>qcallback</rawname>
   <name>Queue Callback</name>
-  <version>17.0.3.4</version>
+  <version>17.0.3.5</version>
   <publisher>Community</publisher>
   <license>GPLv3+</license>
   <licenselink>https://www.gnu.org/licenses/gpl-3.0.html</licenselink>
@@ -18,6 +18,7 @@
   </description>
   <more-info>https://example.com/</more-info>
   <changelog>
+    * 17.0.3.5 - Added Scheduled Queue Callbacks report page
     * 17.0.3.4 - Added qcb-complete dialplan context for callback completion
     * 17.0.3.3 - Fixed alternate number input maxdigits and agent-first callback variable
     * 17.0.3.2 - Fixed callback routing to use FreePBX outbound route selection
@@ -45,6 +46,7 @@
     <file>views/callback_config.php</file>
     <file>views/callback_config_standalone.php</file>
     <file>views/callback_overview.php</file>
+    <file>views/callback_reports.php</file>
     <file>views/queue_callbacks.php</file>
     <file>views/cron.php</file>
     <file>views/bootnav.php</file>

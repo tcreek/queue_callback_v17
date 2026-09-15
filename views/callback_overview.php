@@ -222,12 +222,32 @@ foreach ($queues as $queue) {
                     <li><?php echo _("Click 'Add Callback' to enable callback for a queue") ?></li>
                     <li><?php echo _("Click 'Configure' to set callback options") ?></li>
                     <li><?php echo _("Click 'View' to see pending callbacks") ?></li>
+                    <li><?php echo _("Click 'Reports' to see scheduled callbacks") ?></li>
                     <li><?php echo _("Click 'Remove' to disable callback for a queue") ?></li>
                 </ol>
             </div>
         </div>
     </div>
 </div>
+
+<div class="row" style="margin-top: 20px;">
+    <div class="col-md-12">
+        <a href="?display=qcallback&view=reports" class="btn btn-info btn-lg">
+            <i class="fa fa-calendar"></i> <?php echo _("Scheduled Queue Callbacks Reports") ?>
+        </a>
+    </div>
+</div>
+
+<?php if ($total_pending > 0): ?>
+    <div class="row" style="margin-top: 10px;">
+        <div class="col-md-12">
+            <div class="alert alert-warning">
+                <?php echo _("You have") ?> <strong><?php echo $total_pending ?></strong> <?php echo _("pending callbacks waiting to be processed.") ?>
+                <a href="?display=qcallback&view=reports&status_filter=pending" style="margin-left: 10px;"><?php echo _("View pending") ?></a>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>
 
 <script>
 function addCallback(queueId) {

@@ -295,7 +295,14 @@ switch($view) {
             $content = '<div class="alert alert-danger">' . _("Queue ID required") . '</div>';
         }
         break;
-        
+
+    case "reports":
+        $heading .= " - " . _("Scheduled Queue Callbacks");
+        $content = load_view(__DIR__.'/views/callback_reports.php', array(
+            'request' => $request
+        ));
+        break;
+
     default:
         $content = load_view(__DIR__.'/views/callback_overview.php', array(
             'request' => $request
