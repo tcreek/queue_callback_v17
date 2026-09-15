@@ -28,6 +28,7 @@ out("Queue Callback module uninstallation started");
 try {
     sql("DROP TABLE IF EXISTS queuecallback_requests");
     sql("DROP TABLE IF EXISTS queuecallback_config");
+    sql("DROP TABLE IF EXISTS queuecallback_security");
     sql("DROP TABLE IF EXISTS queuecallback_trigger");
     out("Dropped Queue Callback database tables");
 } catch (\Throwable $e) {

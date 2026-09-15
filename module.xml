@@ -36,6 +36,7 @@
     <file>functions.inc.php</file>
     <file>page.qcallback.php</file>
     <file>page.qcallback_reports.php</file>
+    <file>page.qcallback_security.php</file>
     <file>install.php</file>
     <file>uninstall.php</file>
     <file>hooks.php</file>
