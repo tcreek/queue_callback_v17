@@ -152,8 +152,6 @@ try {
         $count = sql("SELECT COUNT(*) as cnt FROM queuecallback_security", getAll);
         if (empty($count[0]['cnt'])) {
             $entries = [
-                ['pattern' => '_NXXNXXXXXX', 'description' => 'NANP International (10-digit)', 'area_code' => 'NANP', 'enabled' => 1, 'sort_order' => 1],
-                ['pattern' => '_1NXXNXXXXXX', 'description' => 'NANP International (11-digit)', 'area_code' => 'NANP', 'enabled' => 1, 'sort_order' => 2],
                 ['pattern' => '_268NXXXXXX', 'description' => 'Antigua and Barbuda', 'area_code' => '268', 'enabled' => 1, 'sort_order' => 10],
                 ['pattern' => '_284NXXXXXX', 'description' => 'British Virgin Islands', 'area_code' => '284', 'enabled' => 1, 'sort_order' => 20],
                 ['pattern' => '_345NXXXXXX', 'description' => 'Cayman Islands', 'area_code' => '345', 'enabled' => 1, 'sort_order' => 30],

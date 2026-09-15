@@ -444,7 +444,7 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                         <!-- Security Tab -->
                         <div role="tabpanel" class="tab-pane" id="security-tab">
                             <h3><i class="fa fa-shield-alt"></i> <?php echo _("Toll Fraud Prevention - Blocklist") ?></h3>
-                            <p class="text-muted"><?php echo _("Block callbacks to specific area/country codes to prevent toll fraud. Caribbean/High-risk NANP entries are enabled by default.") ?></p>
+                            <p class="text-muted"><?php echo _("Block callbacks to Caribbean area codes to prevent toll fraud. Entry patterns use Asterisk dial plan format.") ?></p>
 
                             <?php $sec_entries = $qcb->getSecurityEntries(); ?>
 
