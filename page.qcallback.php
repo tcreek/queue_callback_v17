@@ -273,7 +273,6 @@ $queue_id = isset($request['queue_id']) ? $request['queue_id'] : '';
 
 $views = array(
     'reports' => _('Scheduled Queue Callbacks'),
-    '' => _('Overview'),
 );
 if (!empty($queue_id)) {
     $views['queue'] = _('Pending Callbacks');
