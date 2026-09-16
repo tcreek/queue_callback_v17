@@ -213,6 +213,7 @@ foreach ($ready_callbacks as $callback) {
         $call_file_content .= "CallerID: Queue Callback <{$callback['queue_id']}>\n";
         $call_file_content .= "Context: queuecallback-outbound\n";
         $call_file_content .= "Extension: s\n";
+        $call_file_content .= "SetVar: __CALLBACK_CUSTOMER_NUM={$callback['callback_number']}\n";
     }
 
     // Common call file content

@@ -160,6 +160,17 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
      * Public API used by your module UI / hooks
      * ------------------------------------------------------------------*/
 
+    public function processIntelligentCallbacks(): void {
+        $script = __DIR__ . '/process_callbacks.php';
+        if (file_exists($script)) {
+            if ($this->isCli()) {
+                @exec('/usr/bin/php ' . escapeshellarg($script) . ' 2>&1');
+            } else {
+                @shell_exec('/usr/bin/php ' . escapeshellarg($script) . ' >/dev/null 2>&1 &');
+            }
+        }
+    }
+
     /**
      * Generate callback dialplan & queue configs.
      * Only runs in CLI unless $force=true.
@@ -371,6 +382,11 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
 
         $this->syncConfigToAsteriskDB($queue_id, $config);
 
+        // Auto-populate default per-queue security entries if none exist
+        if ($config['enabled'] ?? 0) {
+            $this->populateDefaultSecurityEntries($queue_id);
+        }
+
         $this->setupCallbackEvents();
         $this->updateCronJob();
         $this->ensureCronJobExists();
@@ -381,6 +397,66 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
 
         $action = ($config['enabled'] ?? 0) ? 'enabled' : 'disabled';
         freepbx_log(FPBX_LOG_INFO, "Queue Callback: $action callback for queue $queue_id");
+    }
+
+    private function populateDefaultSecurityEntries(string $queue_id): void {
+        try {
+            $existing = $this->db->prepare("SELECT COUNT(*) as cnt FROM queuecallback_security WHERE queue_id = ?");
+            $existing->execute([$queue_id]);
+            $res = $existing->fetch(PDO::FETCH_ASSOC);
+            if ($res['cnt'] > 0) {
+                return;
+            }
+            $entries = [
+                ['pattern' => '_268NXXXXXX', 'description' => 'Antigua and Barbuda', 'area_code' => '268', 'enabled' => 1, 'sort_order' => 10],
+                ['pattern' => '_284NXXXXXX', 'description' => 'British Virgin Islands', 'area_code' => '284', 'enabled' => 1, 'sort_order' => 20],
+                ['pattern' => '_345NXXXXXX', 'description' => 'Cayman Islands', 'area_code' => '345', 'enabled' => 1, 'sort_order' => 30],
+                ['pattern' => '_473NXXXXXX', 'description' => 'Grenada', 'area_code' => '473', 'enabled' => 1, 'sort_order' => 40],
+                ['pattern' => '_649NXXXXXX', 'description' => 'Turks and Caicos Islands', 'area_code' => '649', 'enabled' => 1, 'sort_order' => 50],
+                ['pattern' => '_664NXXXXXX', 'description' => 'Montserrat', 'area_code' => '664', 'enabled' => 1, 'sort_order' => 60],
+                ['pattern' => '_721NXXXXXX', 'description' => 'Sint Maarten', 'area_code' => '721', 'enabled' => 1, 'sort_order' => 70],
+                ['pattern' => '_758NXXXXXX', 'description' => 'Saint Lucia', 'area_code' => '758', 'enabled' => 1, 'sort_order' => 80],
+                ['pattern' => '_767NXXXXXX', 'description' => 'Dominica', 'area_code' => '767', 'enabled' => 1, 'sort_order' => 90],
+                ['pattern' => '_784NXXXXXX', 'description' => 'Saint Vincent and the Grenadines', 'area_code' => '784', 'enabled' => 1, 'sort_order' => 100],
+                ['pattern' => '_809NXXXXXX', 'description' => 'Dominican Republic', 'area_code' => '809', 'enabled' => 1, 'sort_order' => 110],
+                ['pattern' => '_829NXXXXXX', 'description' => 'Dominican Republic', 'area_code' => '829', 'enabled' => 1, 'sort_order' => 120],
+                ['pattern' => '_849NXXXXXX', 'description' => 'Dominican Republic', 'area_code' => '849', 'enabled' => 1, 'sort_order' => 130],
+                ['pattern' => '_868NXXXXXX', 'description' => 'Trinidad and Tobago', 'area_code' => '868', 'enabled' => 1, 'sort_order' => 140],
+                ['pattern' => '_869NXXXXXX', 'description' => 'Saint Kitts and Nevis', 'area_code' => '869', 'enabled' => 1, 'sort_order' => 150],
+                ['pattern' => '_876NXXXXXX', 'description' => 'Jamaica', 'area_code' => '876', 'enabled' => 1, 'sort_order' => 160],
+                ['pattern' => '_1268NXXXXXX', 'description' => 'Antigua and Barbuda (+1)', 'area_code' => '1268', 'enabled' => 1, 'sort_order' => 170],
+                ['pattern' => '_1284NXXXXXX', 'description' => 'British Virgin Islands (+1)', 'area_code' => '1284', 'enabled' => 1, 'sort_order' => 180],
+                ['pattern' => '_1345NXXXXXX', 'description' => 'Cayman Islands (+1)', 'area_code' => '1345', 'enabled' => 1, 'sort_order' => 190],
+                ['pattern' => '_1473NXXXXXX', 'description' => 'Grenada (+1)', 'area_code' => '1473', 'enabled' => 1, 'sort_order' => 200],
+                ['pattern' => '_1649NXXXXXX', 'description' => 'Turks and Caicos Islands (+1)', 'area_code' => '1649', 'enabled' => 1, 'sort_order' => 210],
+                ['pattern' => '_1664NXXXXXX', 'description' => 'Montserrat (+1)', 'area_code' => '1664', 'enabled' => 1, 'sort_order' => 220],
+                ['pattern' => '_1721NXXXXXX', 'description' => 'Sint Maarten (+1)', 'area_code' => '1721', 'enabled' => 1, 'sort_order' => 230],
+                ['pattern' => '_1758NXXXXXX', 'description' => 'Saint Lucia (+1)', 'area_code' => '1758', 'enabled' => 1, 'sort_order' => 240],
+                ['pattern' => '_1767NXXXXXX', 'description' => 'Dominica (+1)', 'area_code' => '1767', 'enabled' => 1, 'sort_order' => 250],
+                ['pattern' => '_1784NXXXXXX', 'description' => 'Saint Vincent and the Grenadines (+1)', 'area_code' => '1784', 'enabled' => 1, 'sort_order' => 260],
+                ['pattern' => '_1809NXXXXXX', 'description' => 'Dominican Republic (+1)', 'area_code' => '1809', 'enabled' => 1, 'sort_order' => 270],
+                ['pattern' => '_1829NXXXXXX', 'description' => 'Dominican Republic (+1)', 'area_code' => '1829', 'enabled' => 1, 'sort_order' => 280],
+                ['pattern' => '_1849NXXXXXX', 'description' => 'Dominican Republic (+1)', 'area_code' => '1849', 'enabled' => 1, 'sort_order' => 290],
+                ['pattern' => '_1868NXXXXXX', 'description' => 'Trinidad and Tobago (+1)', 'area_code' => '1868', 'enabled' => 1, 'sort_order' => 300],
+                ['pattern' => '_1869NXXXXXX', 'description' => 'Saint Kitts and Nevis (+1)', 'area_code' => '1869', 'enabled' => 1, 'sort_order' => 310],
+                ['pattern' => '_1876NXXXXXX', 'description' => 'Jamaica (+1)', 'area_code' => '1876', 'enabled' => 1, 'sort_order' => 320],
+            ];
+            $stmt = $this->db->prepare("INSERT INTO queuecallback_security (pattern, description, area_code, queue_id, enabled, sort_order, created_at) VALUES (?,?,?,?,?,?,?)");
+            foreach ($entries as $entry) {
+                $stmt->execute([
+                    $entry['pattern'],
+                    $entry['description'],
+                    $entry['area_code'],
+                    $queue_id,
+                    $entry['enabled'],
+                    $entry['sort_order'],
+                    time(),
+                ]);
+            }
+            freepbx_log(FPBX_LOG_INFO, "Queue Callback: Auto-populated " . count($entries) . " default security entries for queue $queue_id");
+        } catch (\Throwable $e) {
+            freepbx_log(FPBX_LOG_WARNING, "Queue Callback: Could not populate default security entries for $queue_id: " . $e->getMessage());
+        }
     }
 
     private function validateQueue($queue_id): bool {
@@ -724,19 +800,26 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         $min = (int)($res['min_interval'] ?? 1);
 
         $script = __DIR__ . '/process_callbacks.php';
+        $procScript = basename($script);
+        $min = (int)($res['min_interval'] ?? 1);
+
         $line1 = "* * * * * /usr/bin/php $script >/dev/null 2>&1";
         $line2 = "* * * * * sleep 15; /usr/bin/php $script >/dev/null 2>&1";
         $line3 = "* * * * * sleep 30; /usr/bin/php $script >/dev/null 2>&1";
         $line4 = "* * * * * sleep 45; /usr/bin/php $script >/dev/null 2>&1";
 
         $current = @shell_exec('crontab -l 2>/dev/null') ?: '';
-        $lines = array_filter(explode("\n", $current), function($l) use ($script) {
-            return (strpos($l, basename($script)) === false);
+        $lines = array_filter(explode("\n", $current), function($l) use ($procScript) {
+            return strpos($l, $procScript) === false
+                && strpos($l, 'intelligent_callback_processor.php') === false;
         });
         $new = implode("\n", $lines) . "\n" . $line1 . "\n" . $line2 . "\n" . $line3 . "\n" . $line4 . "\n";
         file_put_contents('/tmp/new_crontab', $new);
-        @shell_exec('crontab /tmp/new_crontab');
+        $cronResult = @shell_exec('crontab /tmp/new_crontab 2>&1');
         @unlink('/tmp/new_crontab');
+        if ($cronResult !== null) {
+            freepbx_log(FPBX_LOG_WARNING, "Queue Callback: crontab update returned: " . trim($cronResult));
+        }
 
         freepbx_log(FPBX_LOG_INFO, "Queue Callback: Updated cron job to run every 15 seconds");
     }
@@ -744,7 +827,8 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
     private function ensureCronJobExists(): void {
         $script = __DIR__ . '/process_callbacks.php';
         $current = @shell_exec('crontab -l 2>/dev/null') ?: '';
-        if (strpos($current, 'process_callbacks.php') !== false) {
+        if (strpos($current, 'process_callbacks.php') !== false
+            || strpos($current, 'intelligent_callback_processor.php') !== false) {
             return;
         }
 
@@ -763,8 +847,11 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         $new = trim($current) . "\n" . $line . "\n";
 
         file_put_contents('/tmp/qcallback_cron', $new);
-        @shell_exec('crontab /tmp/qcallback_cron');
+        $cronResult = @shell_exec('crontab /tmp/qcallback_cron 2>&1');
         @unlink('/tmp/qcallback_cron');
+        if ($cronResult !== null) {
+            freepbx_log(FPBX_LOG_WARNING, "Queue Callback: ensureCronJobExists crontab returned: " . trim($cronResult));
+        }
 
         freepbx_log(FPBX_LOG_INFO, "Queue Callback: Added missing cron job");
     }
@@ -975,7 +1062,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
     public function getSecurityEntries(?string $queue_id = null): array {
         try {
             if ($queue_id !== null) {
-                $stmt = $this->db->prepare("SELECT * FROM queuecallback_security WHERE queue_id = ? OR queue_id = '' ORDER BY sort_order ASC, id ASC");
+                $stmt = $this->db->prepare("SELECT * FROM queuecallback_security WHERE queue_id = ? ORDER BY sort_order ASC, id ASC");
                 $stmt->execute([$queue_id]);
             } else {
                 $stmt = $this->db->query("SELECT * FROM queuecallback_security ORDER BY sort_order ASC, id ASC");

@@ -446,29 +446,8 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                         <!-- Security Tab -->
                         <div role="tabpanel" class="tab-pane" id="security-tab">
                             <h3><i class="fa fa-shield-alt"></i> <?php echo _("Toll Fraud Prevention - Blocklist") ?></h3>
-                            <p class="text-muted"><?php echo _("Block callbacks to Caribbean area codes to prevent toll fraud. Patterns use Asterisk dial plan format.") ?></p>
-
-                            <div class="row" style="margin-bottom: 15px;">
-                                <div class="col-md-8">
-                                    <?php $sec_entries = $qcb->getSecurityEntries($queue_id); ?>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="panel panel-info">
-                                        <div class="panel-heading">
-                                            <h4 class="panel-title"><i class="fa fa-globe"></i> <?php echo _("Adding International Numbers") ?></h4>
-                                        </div>
-                                        <div class="panel-body">
-                                            <p class="text-muted"><?php echo _("To block other countries, add entries using Asterisk patterns:") ?></p>
-                                            <ul class="list-unstyled">
-                                                <li><strong>Country code + area code</strong> - e.g., <code>_52NXXXXX</code> for Mexico (52)</li>
-                                                <li><strong>Full international</strong> - e.g., <code>_44NXXXXXX</code> for UK (44)</li>
-                                                <li><strong>+1 prefix</strong> - e.g., <code>_152NXXXXX</code> for Mexico (+1)</li>
-                                            </ul>
-                                            <p class="text-muted"><?php echo _("Pattern guide: _ = wildcard, N = 2-9, X = 0-9. Use area_code field for categorization.") ?></p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                            <p class="text-muted"><?php echo _("Block high-risk area codes to prevent toll fraud. Default entries are added per-queue for new callbacks. Each queue has its own separate blocklist. Patterns use Asterisk dial plan format.") ?></p>
+                            <?php $sec_entries = $qcb->getSecurityEntries($queue_id); ?>
 
                             <div class="table-responsive" style="margin-bottom: 20px;">
                                 <table class="table table-striped table-hover">
@@ -487,14 +466,14 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                                             <tr><td colspan="6" class="text-center"><?php echo _("No entries configured") ?></td></tr>
                                         <?php else: ?>
                                             <?php foreach ($sec_entries as $se):
-                                                $scope = !empty($se['queue_id']) ? '<span class="label label-info">Queue ' . htmlentities($se['queue_id']) . '</span>' : '<span class="label label-default">' . _('Global') . '</span>';
+                                                $scope = '<span class="label label-info">Queue ' . htmlentities($se['queue_id'] ?? $queue_id) . '</span>';
                                             ?>
                                                 <tr>
                                                     <td><strong><?php echo htmlentities($se['description']) ?></strong></td>
                                                     <td><code><?php echo htmlentities($se['pattern']) ?></code></td>
                                                     <td><?php echo htmlentities($se['area_code']) ?></td>
                                                     <td><?php echo $scope ?></td>
-                                                    <td>
+                                                     <td>
                                                         <form method="post" style="display:inline">
                                                             <input type="hidden" name="sec_action" value="toggle_entry">
                                                             <input type="hidden" name="id" value="<?php echo (int)$se['id'] ?>">
@@ -547,7 +526,8 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                                 <div class="form-group">
                                     <div class="col-sm-offset-3 col-sm-9">
                                         <label class="checkbox-inline">
-                                            <input type="checkbox" name="enabled" checked> <?php echo _("Enabled") ?>
+                                            <input type="checkbox" name="enabled" checked title="<?php echo _("When enabled, calls matching this area code pattern are blocked. When disabled, they are allowed.") ?>"> <?php echo _("Enabled") ?>
+                                            <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="top" title="<?php echo _("When enabled, calls matching this area code pattern are blocked. When disabled, they are allowed.") ?>" style="font-size: 14px; padding-left: 4px; cursor: help;"></i>
                                         </label>
                                         <label class="checkbox-inline" style="margin-left: 20px;">
                                             <input type="number" class="form-control" name="sort_order" value="0" min="0" max="999" style="width: 80px; display: inline; margin-right: 5px;"> <?php echo _("Sort Order") ?>
@@ -565,6 +545,26 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
 
                             <div class="alert alert-warning">
                                 <strong><?php echo _("Note:") ?></strong> <?php echo _("Blocked numbers will be rejected when callbacks are processed. The system checks the blocklist before placing any callback call.") ?>
+                            </div>
+
+                            <div class="panel panel-info" style="margin-top: 20px;">
+                                <div class="panel-heading">
+                                    <h4 class="panel-title"><i class="fa fa-globe"></i> <?php echo _("Adding International Numbers") ?></h4>
+                                </div>
+                                <div class="panel-body" style="font-size: 15px; line-height: 1.6;">
+                                    <p class="text-muted"><?php echo _("To block other countries, add entries using Asterisk patterns:") ?></p>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <ul class="list-unstyled">
+                                                <li><strong>Country code + area code</strong> - e.g., <code>_52NNXXXXXXXX</code> for Mexico (52) — 12 digits</li>
+                                                <li><strong>Full international</strong> - e.g., <code>_44NXXXXXXXXXX</code> for UK (44) — 12 digits</li>
+                                            </ul>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <p class="text-muted"><?php echo _("Pattern guide: _ = wildcard, N = 2-9, X = 0-9. Country code + area code + telephone number typically totals 12-13 digits. Entries are per-queue — each queue manages its own blocklist. Use area_code field for categorization.") ?></p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <!-- End Security Tab -->
@@ -598,8 +598,8 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
             </div>
             <div class="panel-body">
                 <ol>
-                    <li><?php echo _("Go to Admin → System Recordings") ?></li>
-                    <li><?php echo _("Click 'Add Recording'") ?></li>
+                    <li><?php echo _("Go to Admin") ?> → <?php echo _("System Recordings") ?></li>
+                    <li><?php echo _("Click") ?> <?php echo _("Add Recording") ?></li>
                     <li><?php echo _("Record your announcement, e.g.:") ?>
                         <ul>
                             <li><em>"This is Sales returning your call"</em></li>
@@ -612,7 +612,7 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                 </ol>
             </div>
         </div>
-        
+
         <div class="panel panel-warning">
             <div class="panel-heading">
                 <h3 class="panel-title"><?php echo _("Important Notes") ?></h3>

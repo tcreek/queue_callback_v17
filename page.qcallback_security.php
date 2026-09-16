@@ -12,16 +12,20 @@ switch ($action) {
         $pattern = trim($_POST['pattern'] ?? '');
         $description = trim($_POST['description'] ?? '');
         $area_code = trim($_POST['area_code'] ?? '');
+        $queue_id = trim($_POST['queue_id'] ?? '');
         $enabled = isset($_POST['enabled']) ? 1 : 0;
         $sort_order = (int)($_POST['sort_order'] ?? 0);
         if (empty($pattern) || empty($description)) {
             $error = _('Pattern and Description are required');
+        } elseif (empty($queue_id)) {
+            $error = _('Queue is required - entries are per-queue');
         } else {
             try {
                 $qcallback->addSecurityEntry([
                     'pattern' => $pattern,
                     'description' => $description,
                     'area_code' => $area_code,
+                    'queue_id' => $queue_id,
                     'enabled' => $enabled,
                     'sort_order' => $sort_order,
                 ]);
@@ -84,6 +88,12 @@ switch ($action) {
 }
 
 $entries = $qcallback->getSecurityEntries();
+
+$queues = [];
+try {
+    $stmt = FreePBX::Database()->query("SELECT extension AS queue_id, descr AS queue_name FROM queues_config ORDER BY extension");
+    $queues = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+} catch (\Throwable $e) {}
 
 $heading = _('Security - Toll Fraud Prevention');
 ?>
@@ -172,6 +182,15 @@ $heading = _('Security - Toll Fraud Prevention');
                 <div class="panel-body">
                     <form method="post" id="security-add-form">
                         <input type="hidden" name="action" value="add_entry">
+                        <div class="form-group">
+                            <label for="queue_id"><?php echo _('Queue') ?></label>
+                            <select name="queue_id" id="queue_id" class="form-control" required>
+                                <option value=""><?php echo _('Select Queue') ?></option>
+                                <?php foreach ($queues as $qid => $qname): ?>
+                                    <option value="<?php echo htmlentities($qid) ?>"><?php echo htmlentities($qname) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
                         <div class="form-group">
                             <label for="pattern"><?php echo _('Asterisk Pattern') ?></label>
                             <input type="text" class="form-control" name="pattern" id="pattern" placeholder="_268NXXXXXX" required>

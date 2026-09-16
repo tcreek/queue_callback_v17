@@ -87,6 +87,7 @@ function queuecallback_process_single_callback($callback) {
         $call_file_content .= "SetVar: __CALLBACK_ID={$callback['id']}\n";
         $call_file_content .= "SetVar: __CALLBACK_QUEUE_ID={$callback['queue_id']}\n";
         $call_file_content .= "SetVar: __CALLBACK_RETURN_MSG={$callback['return_message_id']}\n";
+        $call_file_content .= "SetVar: __CALLBACK_CUSTOMER_NUM={$callback['callback_number']}\n";
         
         $call_file = "/tmp/queuecallback_{$callback['id']}.call";
         
