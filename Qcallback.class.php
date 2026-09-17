@@ -846,7 +846,6 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
     private function setupCallbackEvents(): void {
         try {
             $stmt = $this->db->prepare("SELECT MIN(processing_interval) AS min_interval FROM queuecallback_config WHERE enabled = 1");
-            $stmt->execute();->prepare("SELECT MIN(processing_interval) AS min_interval FROM queuecallback_config WHERE enabled = 1");
             $stmt->execute();
             $res = $stmt->fetch(PDO::FETCH_ASSOC);
             $interval = (int)($res['min_interval'] ?? 0);
