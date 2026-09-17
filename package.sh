@@ -3,7 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODULE_NAME="qcallback"
-VERSION="17.0.4.1_Beta_4"
+VERSION="17.0.4.2_Beta_4"
 OUTPUT_DIR="$SCRIPT_DIR/dist"
 PACKAGE="$OUTPUT_DIR/${MODULE_NAME}-${VERSION}.tgz"
 

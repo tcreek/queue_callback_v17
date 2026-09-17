@@ -67,7 +67,7 @@ Sync both when making changes. Use `sudo cp` + `chown asterisk:asterisk` + `chmo
 
 ## Version
 
-Current: **17.0.4.1 Beta 4**
+Current: **17.0.4.2 Beta 4**
 
 ## Key Decisions
 
