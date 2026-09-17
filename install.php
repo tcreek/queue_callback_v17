@@ -129,8 +129,8 @@ try {
 
     // Ensure queuecallback_security table exists (upgrade safety)
     try {
-        $c = sql("SHOW COLUMNS FROM `queuecallback_security` LIKE 'id'", "getAll");
-        if (empty($c)) {
+        $securityTable = sql("SHOW TABLES LIKE 'queuecallback_security'", "getAll");
+        if (empty($securityTable)) {
             sql("CREATE TABLE queuecallback_security (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 pattern VARCHAR(20) NOT NULL,
@@ -154,7 +154,62 @@ try {
         freepbx_log(FPBX_LOG_WARNING, "Queue Callback: Could not create queuecallback_security table: " . $e->getMessage());
     }
 
-    // No global default entries - defaults are created per-queue when callbacks are enabled
+    // Populate global Caribbean security entries (queue_id = '' for global scope)
+    try {
+        $check = sql("SELECT COUNT(*) as cnt FROM queuecallback_security", "getAll");
+        if (!empty($check) && (int)$check[0]['cnt'] === 0) {
+            $caribbeanEntries = [
+                ['pattern' => '_268NXXXXXX', 'description' => 'Antigua and Barbuda', 'area_code' => '268', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 10],
+                ['pattern' => '_284NXXXXXX', 'description' => 'British Virgin Islands', 'area_code' => '284', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 20],
+                ['pattern' => '_345NXXXXXX', 'description' => 'Cayman Islands', 'area_code' => '345', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 30],
+                ['pattern' => '_473NXXXXXX', 'description' => 'Grenada', 'area_code' => '473', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 40],
+                ['pattern' => '_649NXXXXXX', 'description' => 'Turks and Caicos Islands', 'area_code' => '649', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 50],
+                ['pattern' => '_664NXXXXXX', 'description' => 'Montserrat', 'area_code' => '664', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 60],
+                ['pattern' => '_721NXXXXXX', 'description' => 'Sint Maarten', 'area_code' => '721', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 70],
+                ['pattern' => '_758NXXXXXX', 'description' => 'Saint Lucia', 'area_code' => '758', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 80],
+                ['pattern' => '_767NXXXXXX', 'description' => 'Dominica', 'area_code' => '767', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 90],
+                ['pattern' => '_784NXXXXXX', 'description' => 'Saint Vincent and the Grenadines', 'area_code' => '784', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 100],
+                ['pattern' => '_809NXXXXXX', 'description' => 'Dominican Republic', 'area_code' => '809', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 110],
+                ['pattern' => '_829NXXXXXX', 'description' => 'Dominican Republic', 'area_code' => '829', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 120],
+                ['pattern' => '_849NXXXXXX', 'description' => 'Dominican Republic', 'area_code' => '849', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 130],
+                ['pattern' => '_868NXXXXXX', 'description' => 'Trinidad and Tobago', 'area_code' => '868', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 140],
+                ['pattern' => '_869NXXXXXX', 'description' => 'Saint Kitts and Nevis', 'area_code' => '869', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 150],
+                ['pattern' => '_876NXXXXXX', 'description' => 'Jamaica', 'area_code' => '876', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 160],
+                ['pattern' => '_1268NXXXXXX', 'description' => 'Antigua and Barbuda (+1)', 'area_code' => '1268', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 170],
+                ['pattern' => '_1284NXXXXXX', 'description' => 'British Virgin Islands (+1)', 'area_code' => '1284', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 180],
+                ['pattern' => '_1345NXXXXXX', 'description' => 'Cayman Islands (+1)', 'area_code' => '1345', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 190],
+                ['pattern' => '_1473NXXXXXX', 'description' => 'Grenada (+1)', 'area_code' => '1473', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 200],
+                ['pattern' => '_1649NXXXXXX', 'description' => 'Turks and Caicos Islands (+1)', 'area_code' => '1649', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 210],
+                ['pattern' => '_1664NXXXXXX', 'description' => 'Montserrat (+1)', 'area_code' => '1664', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 220],
+                ['pattern' => '_1721NXXXXXX', 'description' => 'Sint Maarten (+1)', 'area_code' => '1721', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 230],
+                ['pattern' => '_1758NXXXXXX', 'description' => 'Saint Lucia (+1)', 'area_code' => '1758', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 240],
+                ['pattern' => '_1767NXXXXXX', 'description' => 'Dominica (+1)', 'area_code' => '1767', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 250],
+                ['pattern' => '_1784NXXXXXX', 'description' => 'Saint Vincent and the Grenadines (+1)', 'area_code' => '1784', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 260],
+                ['pattern' => '_1809NXXXXXX', 'description' => 'Dominican Republic (+1)', 'area_code' => '1809', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 270],
+                ['pattern' => '_1829NXXXXXX', 'description' => 'Dominican Republic (+1)', 'area_code' => '1829', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 280],
+                ['pattern' => '_1849NXXXXXX', 'description' => 'Dominican Republic (+1)', 'area_code' => '1849', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 290],
+                ['pattern' => '_1868NXXXXXX', 'description' => 'Trinidad and Tobago (+1)', 'area_code' => '1868', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 300],
+                ['pattern' => '_1869NXXXXXX', 'description' => 'Saint Kitts and Nevis (+1)', 'area_code' => '1869', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 310],
+                ['pattern' => '_1876NXXXXXX', 'description' => 'Jamaica (+1)', 'area_code' => '1876', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 320],
+            ];
+            foreach ($caribbeanEntries as $entry) {
+                sql(
+                    "INSERT INTO queuecallback_security (pattern, description, area_code, queue_id, enabled, sort_order, created_at) VALUES (?,?,?,?,?,?,?)",
+                    "getAll",
+                    $entry['pattern'],
+                    $entry['description'],
+                    $entry['area_code'],
+                    $entry['queue_id'],
+                    $entry['enabled'],
+                    $entry['sort_order'],
+                    time()
+                );
+            }
+            freepbx_log(FPBX_LOG_INFO, "Queue Callback: Auto-populated " . count($caribbeanEntries) . " global default security entries");
+        }
+    } catch (\Throwable $e) {
+        freepbx_log(FPBX_LOG_WARNING, "Queue Callback: Could not populate default security entries: " . $e->getMessage());
+    }
 } catch (\Throwable $e) {
     out("Database setup error: " . $e->getMessage());
 }

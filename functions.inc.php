@@ -810,32 +810,31 @@ function queuecallback_recreate_events() {
  */
 function queuecallback_add_queue_config($queue_id) {
     try {
-        // Check if configuration already exists
-        $existing = FreePBX::Queuecallback()->getQueueCallbackConfig($queue_id);
-        
-        // Only add if it doesn't exist (avoid overwriting existing config)
-        if (empty($existing) || $existing['queue_id'] != $queue_id) {
-            $default_config = array(
-                'enabled' => 0,  // Disabled by default
-                'announce_id' => null,
-                'callback_key' => '*',
-                'processing_interval' => 30,
-                'alt_message_id' => null,
-                'initiated_message_id' => null,
-                'confirm_prompt_id' => null
-            );
-            
-            FreePBX::Queuecallback()->setQueueCallbackConfig($queue_id, $default_config);
-            freepbx_log(FPBX_LOG_INFO, "Queue Callback: Default configuration added for new queue $queue_id");
-            return true;
+        $db = FreePBX::Database();
+        $stmt = $db->prepare("SELECT queue_id FROM queuecallback_config WHERE queue_id = ?");
+        $stmt->execute([$queue_id]);
+        if ($stmt->fetchColumn() !== false) {
+            return false;
         }
-        
+
+        $default_config = array(
+            'enabled' => 0,
+            'announce_id' => null,
+            'callback_key' => '*',
+            'processing_interval' => 30,
+            'alt_message_id' => null,
+            'initiated_message_id' => null,
+            'confirm_prompt_id' => null
+        );
+
+        FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $default_config);
+        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Default configuration added for new queue $queue_id");
+        return true;
+
     } catch (Exception $e) {
         freepbx_log(FPBX_LOG_ERROR, "Queue Callback: Failed to add configuration for queue $queue_id: " . $e->getMessage());
         return false;
     }
-    
-    return false;
 }
 
 /**
@@ -864,9 +863,9 @@ function queuecallback_bulk_queue_operation($operation, $queue_ids) {
                 break;
                 
             case 'disable':
-                $config = FreePBX::Queuecallback()->getQueueCallbackConfig($queue_id);
+                $config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
                 $config['enabled'] = 0;
-                FreePBX::Queuecallback()->setQueueCallbackConfig($queue_id, $config);
+                FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $config);
                 $success_count++;
                 break;
         }
@@ -1043,9 +1042,9 @@ function queuecallback_hook_queue_add($queue_id) {
             'confirm_prompt_id' => null
         );
         
-        FreePBX::Queuecallback()->setQueueCallbackConfig($queue_id, $default_config);
+        FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $default_config);
         freepbx_log(FPBX_LOG_INFO, "Queue Callback: Default configuration added for new queue $queue_id");
-        
+
     } catch (Exception $e) {
         freepbx_log(FPBX_LOG_ERROR, "Queue Callback: Failed to add configuration for new queue $queue_id: " . $e->getMessage());
     }
@@ -1056,7 +1055,7 @@ function queuecallback_hook_queue_add($queue_id) {
  */
 function queuecallback_hook_queue_delete($queue_id) {
     try {
-        FreePBX::Queuecallback()->deleteQueueCallbackConfig($queue_id);
+        FreePBX::Qcallback()->deleteQueueCallbackConfig($queue_id);
         freepbx_log(FPBX_LOG_INFO, "Queue Callback: Configuration deleted for queue $queue_id");
         
     } catch (Exception $e) {

@@ -89,6 +89,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
      * ------------------------------------------------------------------*/
     public function install() {
         $this->installModuleFiles();
+        $this->installMenuConfiguration();
         $this->setupCallbackEvents();
         $this->installAgiScripts();
         $this->installCallbackDialplan();
@@ -98,6 +99,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         $this->cleanupCallbackEvents();
         $this->uninstallAgiScripts();
         $this->uninstallCallbackDialplan();
+        $this->uninstallMenuConfiguration();
         $this->uninstallModuleFiles();
     }
 
@@ -379,11 +381,11 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             $config['call_first'] ?? 'customer',
             $config['outbound_route_id'] ?? 1
         ]);
+        $isNewConfig = $stmt->rowCount() === 1;
 
         $this->syncConfigToAsteriskDB($queue_id, $config);
 
-        // Auto-populate default per-queue security entries if none exist
-        if ($config['enabled'] ?? 0) {
+        if ($isNewConfig || ($config['enabled'] ?? 0)) {
             $this->populateDefaultSecurityEntries($queue_id);
         }
 
@@ -920,7 +922,21 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         $dest_dir = '/var/www/html/admin/modules/qcallback';
         if (!is_dir($dest_dir)) { mkdir($dest_dir, 0755, true); }
 
-        $files = ['Qcallback.class.php','functions.inc.php','module.xml','page.qcallback.php','install.php','uninstall.php'];
+        $files = [
+            'Qcallback.class.php',
+            'functions.inc.php',
+            'freepbx_menu.conf',
+            'hooks.php',
+            'install.php',
+            'intelligent_callback_processor.php',
+            'module.xml',
+            'page.qcallback.php',
+            'page.qcallback_reports.php',
+            'page.qcallback_security.php',
+            'page.qcallback_tab.php',
+            'process_callbacks.php',
+            'uninstall.php',
+        ];
         foreach ($files as $f) {
             $src = $module_dir . '/' . $f;
             $dst = $dest_dir . '/' . $f;
@@ -932,6 +948,69 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         }
         foreach (['agi-bin','views'] as $d) {
             $this->copyDirectory($module_dir . '/' . $d, $dest_dir . '/' . $d);
+        }
+    }
+
+    private function installMenuConfiguration(): void {
+        $src = __DIR__ . '/freepbx_menu.conf';
+        $dst = '/etc/asterisk/freepbx_menu.conf';
+        if (!is_readable($src)) {
+            return;
+        }
+
+        try {
+            $moduleConfig = file_get_contents($src);
+            $existing = is_readable($dst) ? file_get_contents($dst) : '';
+            $existing = preg_replace(
+                '/^\s*\[(?:qcallback_reports|qcallback_security)\][^\[]*?(?=^\s*\[|\z)/mi',
+                '',
+                $existing
+            ) ?? '';
+            $content = trim($existing);
+            if ($content !== '') {
+                $content .= "\n\n";
+            }
+            $content .= trim($moduleConfig) . "\n";
+
+            if (!is_dir(dirname($dst))) {
+                mkdir(dirname($dst), 0755, true);
+            }
+            if (file_put_contents($dst, $content, LOCK_EX) === false) {
+                freepbx_log(FPBX_LOG_WARNING, 'Queue Callback: Could not write freepbx_menu.conf');
+                return;
+            }
+            @chown($dst, 'asterisk');
+            @chgrp($dst, 'asterisk');
+            @chmod($dst, 0664);
+        } catch (\Throwable $e) {
+            freepbx_log(FPBX_LOG_WARNING, 'Queue Callback: Could not install freepbx_menu.conf: ' . $e->getMessage());
+        }
+    }
+
+    private function uninstallMenuConfiguration(): void {
+        $dst = '/etc/asterisk/freepbx_menu.conf';
+        if (!is_readable($dst)) {
+            return;
+        }
+
+        try {
+            $content = file_get_contents($dst);
+            $content = preg_replace(
+                '/^\s*\[(?:qcallback_reports|qcallback_security)\][^\[]*?(?=^\s*\[|\z)/mi',
+                '',
+                $content
+            ) ?? '';
+            $content = trim(preg_replace('/\n{3,}/', "\n\n", $content));
+            if ($content === '') {
+                @unlink($dst);
+                return;
+            }
+            file_put_contents($dst, $content . "\n", LOCK_EX);
+            @chown($dst, 'asterisk');
+            @chgrp($dst, 'asterisk');
+            @chmod($dst, 0664);
+        } catch (\Throwable $e) {
+            freepbx_log(FPBX_LOG_WARNING, 'Queue Callback: Could not remove freepbx_menu.conf entries: ' . $e->getMessage());
         }
     }
 
@@ -1064,9 +1143,22 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             if ($queue_id !== null) {
                 $stmt = $this->db->prepare("SELECT * FROM queuecallback_security WHERE queue_id = ? ORDER BY sort_order ASC, id ASC");
                 $stmt->execute([$queue_id]);
-            } else {
-                $stmt = $this->db->query("SELECT * FROM queuecallback_security ORDER BY sort_order ASC, id ASC");
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                if (!empty($rows)) {
+                    return $rows;
+                }
+                return $this->getGlobalSecurityEntries();
             }
+            $stmt = $this->db->query("SELECT * FROM queuecallback_security ORDER BY sort_order ASC, id ASC");
+            return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    private function getGlobalSecurityEntries(): array {
+        try {
+            $stmt = $this->db->query("SELECT * FROM queuecallback_security WHERE queue_id = '' ORDER BY sort_order ASC, id ASC");
             return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         } catch (\Throwable $e) {
             return [];

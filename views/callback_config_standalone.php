@@ -466,7 +466,9 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                                             <tr><td colspan="6" class="text-center"><?php echo _("No entries configured") ?></td></tr>
                                         <?php else: ?>
                                             <?php foreach ($sec_entries as $se):
-                                                $scope = '<span class="label label-info">Queue ' . htmlentities($se['queue_id'] ?? $queue_id) . '</span>';
+                                                $scope = ($se['queue_id'] === '')
+                                                    ? '<span class="label label-info">' . _("Global") . '</span>'
+                                                    : '<span class="label label-info">Queue ' . htmlentities($se['queue_id']) . '</span>';
                                             ?>
                                                 <tr>
                                                     <td><strong><?php echo htmlentities($se['description']) ?></strong></td>
