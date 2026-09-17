@@ -10,7 +10,6 @@
   <menuitems>
     <qcallback needsenginedb="yes">Queue Callback</qcallback>
     <qcallback_reports needsenginedb="yes" category="Reports">Scheduled Queue Callbacks</qcallback_reports>
-    <qcallback_security needsenginedb="yes" category="Tools">Security</qcallback_security>
   </menuitems>
   <depends>
     <module>framework ge 17.0.0</module>
