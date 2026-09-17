@@ -90,6 +90,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
     public function install() {
         $this->installModuleFiles();
         $this->installMenuConfiguration();
+        $this->installDatabaseTables();
         $this->setupCallbackEvents();
         $this->installAgiScripts();
         $this->installCallbackDialplan();
@@ -743,11 +744,109 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
     }
 
     /* ------------------------------------------------------------------
-     * Events / cron
      * ------------------------------------------------------------------*/
+    private function installDatabaseTables(): void {
+        try {
+            $tables = $this->db->query("SHOW TABLES LIKE 'queuecallback_config'")->fetchAll();
+            if (empty($tables)) {
+                $this->db->exec("DROP TABLE IF EXISTS queuecallback_requests");
+                $this->db->exec("DROP TABLE IF EXISTS queuecallback_config");
+                $this->db->exec("DROP TABLE IF EXISTS queuecallback_trigger");
+
+                $this->db->exec("CREATE TABLE queuecallback_requests (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    queue_id VARCHAR(50) NOT NULL,
+                    caller_id VARCHAR(50) DEFAULT NULL,
+                    callback_number VARCHAR(50) NOT NULL,
+                    time_requested INT NOT NULL,
+                    time_processed INT DEFAULT NULL,
+                    status ENUM('pending','processing','completed','failed','cancelled') DEFAULT 'pending',
+                    attempts INT DEFAULT 0,
+                    max_attempts INT DEFAULT 3,
+                    last_attempt INT DEFAULT NULL,
+                    uniqueid VARCHAR(50) DEFAULT NULL,
+                    position INT DEFAULT NULL,
+                    INDEX idx_queue_status (queue_id, status),
+                    INDEX idx_time_requested (time_requested)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+
+                $this->db->exec("CREATE TABLE queuecallback_config (
+                    queue_id VARCHAR(50) PRIMARY KEY,
+                    enabled TINYINT(1) DEFAULT 0,
+                    announce_id VARCHAR(100) DEFAULT NULL,
+                    announce_frequency INT DEFAULT 1,
+                    callback_key VARCHAR(10) DEFAULT '*',
+                    processing_interval INT DEFAULT 30,
+                    max_attempts INT DEFAULT 3,
+                    retry_interval INT DEFAULT 30,
+                    return_message_id VARCHAR(100) DEFAULT NULL,
+                    confirm_message_id VARCHAR(100) DEFAULT NULL,
+                    confirm_number TINYINT(1) DEFAULT 1,
+                    alt_number_key VARCHAR(10) DEFAULT '2',
+                    alt_message_id VARCHAR(100) DEFAULT NULL,
+                    initiated_message_id VARCHAR(100) DEFAULT NULL,
+                    confirm_prompt_id VARCHAR(100) DEFAULT NULL,
+                    call_first VARCHAR(10) DEFAULT 'customer',
+                    outbound_route_id INT DEFAULT 1
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+
+                $this->db->exec("CREATE TABLE queuecallback_trigger (
+                    id INT PRIMARY KEY DEFAULT 1,
+                    last_run INT NOT NULL,
+                    UNIQUE KEY unique_id (id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+
+                freepbx_log(FPBX_LOG_INFO, 'Queue Callback: Created database tables');
+            } else {
+                // Upgrade: add missing columns
+                $cols = $this->db->query("SHOW COLUMNS FROM queuecallback_config")->fetchAll(PDO::FETCH_COLUMN);
+                $upgrades = [
+                    'announce_frequency'   => "ALTER TABLE queuecallback_config ADD COLUMN announce_frequency INT DEFAULT 1 AFTER announce_id",
+                    'call_first'           => "ALTER TABLE queuecallback_config ADD COLUMN call_first VARCHAR(10) DEFAULT 'customer' AFTER alt_number_key",
+                    'outbound_route_id'    => "ALTER TABLE queuecallback_config ADD COLUMN outbound_route_id INT DEFAULT 1 AFTER call_first",
+                    'alt_message_id'       => "ALTER TABLE queuecallback_config ADD COLUMN alt_message_id VARCHAR(100) DEFAULT NULL AFTER confirm_number",
+                    'initiated_message_id' => "ALTER TABLE queuecallback_config ADD COLUMN initiated_message_id VARCHAR(100) DEFAULT NULL AFTER alt_message_id",
+                    'confirm_prompt_id'    => "ALTER TABLE queuecallback_config ADD COLUMN confirm_prompt_id VARCHAR(100) DEFAULT NULL AFTER initiated_message_id",
+                ];
+                foreach ($upgrades as $col => $sql) {
+                    if (!in_array($col, $cols)) {
+                        $this->db->exec($sql);
+                        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Added column $col");
+                    }
+                }
+            }
+
+            // Ensure security table exists
+            $secTables = $this->db->query("SHOW TABLES LIKE 'queuecallback_security'")->fetchAll();
+            if (empty($secTables)) {
+                $this->db->exec("CREATE TABLE queuecallback_security (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    pattern VARCHAR(20) NOT NULL,
+                    description VARCHAR(100) NOT NULL,
+                    area_code VARCHAR(10) DEFAULT '',
+                    queue_id VARCHAR(20) DEFAULT '',
+                    enabled TINYINT(1) DEFAULT 1,
+                    sort_order INT DEFAULT 0,
+                    created_at INT DEFAULT NULL,
+                    updated_at INT DEFAULT NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+                freepbx_log(FPBX_LOG_INFO, 'Queue Callback: Created queuecallback_security table');
+            } else {
+                $secCols = $this->db->query("SHOW COLUMNS FROM queuecallback_security")->fetchAll(PDO::FETCH_COLUMN);
+                if (!in_array('queue_id', $secCols)) {
+                    $this->db->exec("ALTER TABLE queuecallback_security ADD COLUMN queue_id VARCHAR(20) DEFAULT '' AFTER area_code");
+                    freepbx_log(FPBX_LOG_INFO, 'Queue Callback: Added queue_id column to queuecallback_security');
+                }
+            }
+        } catch (\Throwable $e) {
+            freepbx_log(FPBX_LOG_ERROR, 'Queue Callback: installDatabaseTables failed: ' . $e->getMessage());
+        }
+    }
+
     private function setupCallbackEvents(): void {
         try {
             $stmt = $this->db->prepare("SELECT MIN(processing_interval) AS min_interval FROM queuecallback_config WHERE enabled = 1");
+            $stmt->execute();->prepare("SELECT MIN(processing_interval) AS min_interval FROM queuecallback_config WHERE enabled = 1");
             $stmt->execute();
             $res = $stmt->fetch(PDO::FETCH_ASSOC);
             $interval = (int)($res['min_interval'] ?? 0);
@@ -962,7 +1061,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             $moduleConfig = file_get_contents($src);
             $existing = is_readable($dst) ? file_get_contents($dst) : '';
             $existing = preg_replace(
-                '/^\s*\[(?:qcallback_reports|qcallback_security)\][^\[]*?(?=^\s*\[|\z)/mi',
+                '/^\s*\[(?:qcallback|qcallback_reports|qcallback_security)\][^\[]*?(?=^\s*\[|\z)/mi',
                 '',
                 $existing
             ) ?? '';
@@ -996,7 +1095,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         try {
             $content = file_get_contents($dst);
             $content = preg_replace(
-                '/^\s*\[(?:qcallback_reports|qcallback_security)\][^\[]*?(?=^\s*\[|\z)/mi',
+                '/^\s*\[(?:qcallback|qcallback_reports|qcallback_security)\][^\[]*?(?=^\s*\[|\z)/mi',
                 '',
                 $content
             ) ?? '';

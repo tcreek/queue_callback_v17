@@ -9,8 +9,8 @@
   <category>Applications</category>
   <menuitems>
     <qcallback needsenginedb="yes">Queue Callback</qcallback>
-    <qcallback_reports needsenginedb="yes">Scheduled Queue Callbacks</qcallback_reports>
-    <qcallback_security needsenginedb="yes">Security</qcallback_security>
+    <qcallback_reports needsenginedb="yes" category="Reports">Scheduled Queue Callbacks</qcallback_reports>
+    <qcallback_security needsenginedb="yes" category="Tools">Security</qcallback_security>
   </menuitems>
   <depends>
     <module>framework ge 17.0.0</module>
@@ -20,7 +20,7 @@
   </description>
   <more-info>https://example.com/</more-info>
   <changelog>
-    * 17.0.4.0 Beta 5 - Populate Caribbean security defaults when a queue callback is created, install the scheduled report page and menu entry, and include security pages during installation
+    * 17.0.4.1 Beta 4- Populate Caribbean security defaults when a queue callback is created, install the scheduled report page and menu entry, and include security pages during installation
     * 17.0.4.0 Beta 4 - Added outbound route selection via from-internal for customer-first callbacks, per-queue security blocklist entries, Enabled tooltip for Add New Entry form
     * 17.0.3.5 Beta 4 - Added processIntelligentCallbacks method, fixed cron setup for callback processor, updated Qcallback.class.php cron entries to also strip intelligent_processor entries
     * 17.0.3.5 Beta 3 - Changed default language to Spanish, Reports menu via freepbx_menu.conf

@@ -449,7 +449,7 @@ try {
     $menuSrc = __DIR__ . '/freepbx_menu.conf';
     $menuDst = '/etc/asterisk/freepbx_menu.conf';
     if (file_exists($menuSrc) && is_readable($menuSrc)) {
-        if (!file_exists($menuDst) || strpos(file_get_contents($menuDst), '[qcallback_reports]') === false) {
+        if (!file_exists($menuDst) || strpos(file_get_contents($menuDst), '[qcallback]') === false) {
             @copy($menuSrc, $menuDst);
             @chown($menuDst, 'asterisk'); @chgrp($menuDst, 'asterisk'); @chmod($menuDst, 0664);
         }
