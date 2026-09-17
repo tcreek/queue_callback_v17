@@ -155,8 +155,9 @@ try {
     }
 
     // Populate global Caribbean security entries (queue_id = '' for global scope)
+    // Check specifically for global entries - per-queue entries may exist but global ones may not
     try {
-        $check = sql("SELECT COUNT(*) as cnt FROM queuecallback_security", "getAll");
+        $check = sql("SELECT COUNT(*) as cnt FROM queuecallback_security WHERE queue_id = ''", "getAll");
         if (!empty($check) && (int)$check[0]['cnt'] === 0) {
             $caribbeanEntries = [
                 ['pattern' => '_268NXXXXXX', 'description' => 'Antigua and Barbuda', 'area_code' => '268', 'queue_id' => '', 'enabled' => 1, 'sort_order' => 10],
@@ -441,6 +442,23 @@ PHP;
     out("Installed cron for callback processor");
 } catch (\Throwable $e) {
     out("Processor setup error: " . $e->getMessage());
+}
+
+// Ensure menu configuration and FreePBX reload after installation
+try {
+    $menuSrc = __DIR__ . '/freepbx_menu.conf';
+    $menuDst = '/etc/asterisk/freepbx_menu.conf';
+    if (file_exists($menuSrc) && is_readable($menuSrc)) {
+        if (!file_exists($menuDst) || strpos(file_get_contents($menuDst), '[qcallback_reports]') === false) {
+            @copy($menuSrc, $menuDst);
+            @chown($menuDst, 'asterisk'); @chgrp($menuDst, 'asterisk'); @chmod($menuDst, 0664);
+        }
+    }
+    if (function_exists('needreload')) {
+        needreload();
+    }
+} catch (\Throwable $e) {
+    out("Post-install setup error: " . $e->getMessage());
 }
 
 out("Queue Callback module installation completed");
