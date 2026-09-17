@@ -2,7 +2,7 @@
 <module>
   <rawname>qcallback</rawname>
   <name>Queue Callback</name>
-  <version>17.0.4.2 Beta 4</version>
+  <version>17.0.4.3 Beta 4</version>
   <publisher>Community</publisher>
   <license>GPLv3+</license>
   <licenselink>https://www.gnu.org/licenses/gpl-3.0.html</licenselink>
@@ -19,6 +19,7 @@
   </description>
   <more-info>https://example.com/</more-info>
   <changelog>
+    * 17.0.4.3 Beta 4 - Removed Security from FreePBX top-level menu; security is a tab within queue callback configuration only
     * 17.0.4.1 Beta 4- Populate Caribbean security defaults when a queue callback is created, install the scheduled report page and menu entry, and include security pages during installation
     * 17.0.4.0 Beta 4 - Added outbound route selection via from-internal for customer-first callbacks, per-queue security blocklist entries, Enabled tooltip for Add New Entry form
     * 17.0.3.5 Beta 4 - Added processIntelligentCallbacks method, fixed cron setup for callback processor, updated Qcallback.class.php cron entries to also strip intelligent_processor entries
