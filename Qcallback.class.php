@@ -494,59 +494,27 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
      * ------------------------------------------------------------------*/
 
     private function generateQueuesPostCustomWorking(array $configs): void {
-        $qpcPath = '/etc/asterisk/queues_post_custom.conf';
-        $current = file_exists($qpcPath) ? file_get_contents($qpcPath) : '';
-        $current = preg_replace('/; Auto: queue callback context.*$/s', '', $current);
-        // Strip ALL existing QCB_DB AUTO blocks (handles block at start of file or mid-file)
-        $current = preg_replace('/;?\s*BEGIN QCB_DB AUTO[\s\S]*?; END QCB_DB AUTO\n?/s', '', $current);
-
-        $buf = "\n; BEGIN QCB_DB AUTO (generated " . date('Y-m-d H:i:s') . ")\n";
-        $freqSecMap = [];
-        $annMap = [];
+        $path = '/etc/asterisk/queues_post_custom.conf';
+        $existing = file_exists($path) ? file_get_contents($path) : '';
+        // Remove our previous block
+        $existing = preg_replace('/\n?; BEGIN QCB AUTO[\s\S]*?; END QCB AUTO\n?/s', '', $existing);
+        $buf = "\n; BEGIN QCB AUTO (generated " . date('Y-m-d H:i:s') . ")\n";
         foreach ($configs as $c) {
             $qid = $c['queue_id'];
-            $ann = $c['announce_file'];
-            $freqMin = (int)($c['announce_frequency'] ?? 1);
-            $freqSec = max(1, $freqMin) * 60;
-            $freqSecMap[$qid] = $freqSec;
-            $annMap[$qid] = $ann;
-
+            $ann = $c['announce_file'] ?: '';
+            $freqSec = max(1, (int)($c['announce_frequency'] ?? 1)) * 60;
             $buf .= "[$qid](+)\n";
             $buf .= "context=queuecallback-$qid\n";
-            if (!empty($ann)) {
+            if ($ann !== '') {
                 $buf .= "periodic-announce=$ann\n";
                 $buf .= "periodic-announce-frequency=$freqSec\n";
             }
             $buf .= "\n";
         }
-        $buf .= "; END QCB_DB AUTO\n";
-
-        $tmp = '/tmp/queues_post_custom_' . getmypid() . '.tmp';
-        file_put_contents($tmp, rtrim($current) . $buf);
-        copy($tmp, $qpcPath);
-        @unlink($tmp);
-        @chown($qpcPath, 'asterisk'); @chgrp($qpcPath, 'asterisk'); @chmod($qpcPath, 0664);
-
-        foreach ($freqSecMap as $qid => $freqSec) {
-            try {
-                $this->db->prepare("REPLACE INTO queues_details (id, keyword, data, flags) VALUES (?, 'periodic-announce-frequency', ?, 0)")->execute([$qid, $freqSec]);
-            } catch (\Exception $e) {
-                freepbx_log(FPBX_LOG_WARNING, "Queue Callback: Could not update periodic-announce-frequency for $qid: " . $e->getMessage());
-            }
-        }
-        foreach ($annMap as $qid => $ann) {
-            try {
-                if (!empty($ann)) {
-                    $this->db->prepare("REPLACE INTO queues_details (id, keyword, data, flags) VALUES (?, 'periodic-announce', ?, 0)")->execute([$qid, $ann]);
-                } else {
-                    $this->db->prepare("DELETE FROM queues_details WHERE id=? AND keyword='periodic-announce'")->execute([$qid]);
-                }
-            } catch (\Exception $e) {
-                freepbx_log(FPBX_LOG_WARNING, "Queue Callback: Could not update periodic-announce for $qid: " . $e->getMessage());
-            }
-        }
-
-        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Wrote " . count($configs) . " queue sections to $qpcPath");
+        $buf .= "; END QCB AUTO\n";
+        file_put_contents($path, rtrim($existing) . $buf . "\n");
+        @chown($path, 'asterisk'); @chgrp($path, 'asterisk'); @chmod($path, 0664);
+        freepbx_log(FPBX_LOG_INFO, "Queue Callback: wrote " . count($configs) . " queue sections to queues_post_custom.conf");
     }
 
     /**

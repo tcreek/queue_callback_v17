@@ -522,6 +522,14 @@ function qcallback_get_config($engine) {
     if (!qcb_is_reload_context()) { return; }
     
     if ($engine !== 'asterisk') { return; }
+
+    // Write queues_post_custom.conf and extensions_custom.conf on every reload
+    try {
+        FreePBX::Qcallback()->generateCallbackDialplan();
+    } catch (\Throwable $e) {
+        freepbx_log(FPBX_LOG_ERROR, 'Queue Callback: generateCallbackDialplan failed: ' . $e->getMessage());
+    }
+
     
     global $ext;
     
