@@ -497,16 +497,19 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         $qpcPath = '/etc/asterisk/queues_post_custom.conf';
         $current = file_exists($qpcPath) ? file_get_contents($qpcPath) : '';
         $current = preg_replace('/; Auto: queue callback context.*$/s', '', $current);
-        $current = preg_replace('/\n; BEGIN QCB_DB AUTO[\s\S]*?; END QCB_DB AUTO\n/s', '', $current);
+        // Strip ALL existing QCB_DB AUTO blocks (handles block at start of file or mid-file)
+        $current = preg_replace('/;?\s*BEGIN QCB_DB AUTO[\s\S]*?; END QCB_DB AUTO\n?/s', '', $current);
 
         $buf = "\n; BEGIN QCB_DB AUTO (generated " . date('Y-m-d H:i:s') . ")\n";
         $freqSecMap = [];
+        $annMap = [];
         foreach ($configs as $c) {
             $qid = $c['queue_id'];
             $ann = $c['announce_file'];
             $freqMin = (int)($c['announce_frequency'] ?? 1);
             $freqSec = max(1, $freqMin) * 60;
             $freqSecMap[$qid] = $freqSec;
+            $annMap[$qid] = $ann;
 
             $buf .= "[$qid](+)\n";
             $buf .= "context=queuecallback-$qid\n";
@@ -529,6 +532,17 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
                 $this->db->prepare("REPLACE INTO queues_details (id, keyword, data, flags) VALUES (?, 'periodic-announce-frequency', ?, 0)")->execute([$qid, $freqSec]);
             } catch (\Exception $e) {
                 freepbx_log(FPBX_LOG_WARNING, "Queue Callback: Could not update periodic-announce-frequency for $qid: " . $e->getMessage());
+            }
+        }
+        foreach ($annMap as $qid => $ann) {
+            try {
+                if (!empty($ann)) {
+                    $this->db->prepare("REPLACE INTO queues_details (id, keyword, data, flags) VALUES (?, 'periodic-announce', ?, 0)")->execute([$qid, $ann]);
+                } else {
+                    $this->db->prepare("DELETE FROM queues_details WHERE id=? AND keyword='periodic-announce'")->execute([$qid]);
+                }
+            } catch (\Exception $e) {
+                freepbx_log(FPBX_LOG_WARNING, "Queue Callback: Could not update periodic-announce for $qid: " . $e->getMessage());
             }
         }
 
