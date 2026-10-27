@@ -36,7 +36,7 @@ if (isset($_REQUEST['action'])) {
                     $default_config = array(
                         'enabled' => 1,
                         'announce_id' => null,
-                        'callback_key' => '*',
+                        'callback_key' => '#',
                         'processing_interval' => 30,
                         'alt_message_id' => null,
                         'initiated_message_id' => null,
@@ -147,7 +147,8 @@ if (isset($_REQUEST['action'])) {
                     $new_config = array(
                         'enabled' => $_REQUEST['callback_enabled'] ?? 0,
                         'announce_id' => $_REQUEST['callback_announce_id'] ?: null,
-                        'callback_key' => $_REQUEST['callback_key'] ?: '*',
+                        'announce_frequency' => max(0, min(15, (int)($_REQUEST['callback_announce_frequency'] ?? 0))),
+                        'callback_key' => $_REQUEST['callback_key'] ?: '#',
                         'processing_interval' => (int)($_REQUEST['callback_processing_interval'] ?: 30),
                         'max_attempts' => (int)($_REQUEST['callback_max_attempts'] ?: 3),
                         'retry_interval' => (int)($_REQUEST['callback_retry_interval'] ?: 5),

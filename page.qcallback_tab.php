@@ -38,7 +38,7 @@ $callback_config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
 // Handle form submission
 if ($_POST) {
     $enabled = isset($_POST['callback_enabled']) ? 1 : 0;
-    $callback_key = $_POST['callback_key'] ?? '*';
+    $callback_key = $_POST['callback_key'] ?? '#';
     $processing_interval = (int)($_POST['processing_interval'] ?? 30);
     $announce_id = $_POST['announce_id'] ?? null;
     $return_message_id = $_POST['return_message_id'] ?? null;
@@ -69,7 +69,7 @@ if ($_POST) {
 }
 
 $enabled = !empty($callback_config['enabled']);
-$callback_key = $callback_config['callback_key'] ?? '*';
+$callback_key = $callback_config['callback_key'] ?? '#';
 $processing_interval = $callback_config['processing_interval'] ?? 30;
 $announce_id = $callback_config['announce_id'] ?? '';
 $return_message_id = $callback_config['return_message_id'] ?? '';
@@ -116,7 +116,7 @@ $confirm_prompt_id = $callback_config['confirm_prompt_id'] ?? '';
                 </div>
             </div>
             <div class="help-block" id="callback_key-help">
-                The key callers press to request a callback (default: *). Must be a single digit or *.
+                The key callers press to request a callback (default: #, pound). Must be a single digit, * (star), or # (pound). Choose a key not used by the Breakout IVR and match it in your callback instruction recording.
             </div>
             
             <div class="form-group">

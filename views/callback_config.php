@@ -22,7 +22,7 @@
 
 $callback_enabled = $callback_config['enabled'] ?? 0;
 $callback_announce_id = $callback_config['announce_id'] ?? '';
-$callback_key = $callback_config['callback_key'] ?? '*';
+$callback_key = $callback_config['callback_key'] ?? '#';
 $callback_processing_interval = $callback_config['processing_interval'] ?? 5;
 $callback_outbound_route_id = $callback_config['outbound_route_id'] ?? 1;
 
@@ -149,7 +149,7 @@ try {
     </div>
     <div class="row">
         <div class="col-md-12">
-            <span id="callback_announce_id-help" class="help-block fpbx-help-block"><?php echo _("Optional announcement explaining the callback option to callers. Example: 'To request a callback instead of waiting, press star.' Leave blank if no announcement needed. Create recordings in Admin → System Recordings.") ?></span>
+            <span id="callback_announce_id-help" class="help-block fpbx-help-block"><?php echo _("Optional announcement explaining the callback option to callers. Example: 'To request a callback instead of waiting, press pound (#).' Leave blank if no announcement needed. Create recordings in Admin → System Recordings.") ?></span>
         </div>
     </div>
 </div>
@@ -165,8 +165,12 @@ try {
                     </div>
                     <div class="col-md-9">
                         <div class="input-group">
-                            <input type="number" class="form-control" id="callback_announce_frequency" name="callback_announce_frequency" value="<?php echo $callback_config['announce_frequency'] ?? 1 ?>" min="1" max="15">
-                            <span class="input-group-addon"><?php echo _("minutes") ?></span>
+                            <select class="form-control" id="callback_announce_frequency" name="callback_announce_frequency">
+                                            <?php foreach (range(0, 15) as $frequency): ?>
+                                                <option value="<?php echo $frequency ?>" <?php echo (int)($callback_config['announce_frequency'] ?? 0) === $frequency ? 'selected' : '' ?>><?php echo $frequency === 0 ? 30 : $frequency * 60 ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <span class="input-group-addon"><?php echo _("seconds") ?></span>
                         </div>
                     </div>
                 </div>
@@ -175,9 +179,14 @@ try {
     </div>
     <div class="row">
         <div class="col-md-12">
-            <span id="callback_announce_frequency-help" class="help-block fpbx-help-block"><?php echo _("How often to play the callback announcement to callers waiting in the queue. Default: 1 minute.") ?></span>
+            <span id="callback_announce_frequency-help" class="help-block fpbx-help-block"><?php echo _("How often to play the Queue Callback Instruction while waiting in the queue. Default: 30 seconds. This interval controls the first announcement and subsequent repeats.") ?></span>
         </div>
     </div>
+</div>
+
+<div class="alert alert-warning" role="alert">
+    <strong><?php echo _("Breakout IVR and callback keys") ?></strong>
+    <?php echo _("The Breakout IVR selected in the Queues module remains available while Queue Callback is enabled. The callback key takes priority if the IVR uses the same key. Choose a callback key that is not used by the Breakout IVR menu. The Queue Callback Instruction selected here is the periodic announcement played while waiting.") ?>
 </div>
 
 <!-- Callback Key -->
@@ -192,7 +201,7 @@ try {
                     <div class="col-md-9">
                         <select class="form-control" id="callback_key" name="callback_key">
                             <?php
-                            $keys = array('*' => '*', '#' => '#', '0' => '0', '1' => '1', '2' => '2', '3' => '3', '4' => '4', '5' => '5', '6' => '6', '7' => '7', '8' => '8', '9' => '9');
+                            $keys = array('#' => _('# (pound) - default'), '*' => '*', '0' => '0', '1' => '1', '2' => '2', '3' => '3', '4' => '4', '5' => '5', '6' => '6', '7' => '7', '8' => '8', '9' => '9');
                             foreach ($keys as $key => $display) {
                                 $selected = ($key == $callback_key) ? 'selected' : '';
                                 echo "<option value=\"$key\" $selected>$display</option>";
@@ -206,7 +215,7 @@ try {
     </div>
     <div class="row">
         <div class="col-md-12">
-            <span id="callback_key-help" class="help-block fpbx-help-block"><?php echo _("The DTMF key (0-9, *, #) that callers must press to request a callback. This key will be monitored while callers are waiting in the queue. Default is * (star). Make sure this key matches what you tell callers in your announcement.") ?></span>
+            <span id="callback_key-help" class="help-block fpbx-help-block"><?php echo _("The DTMF key (0-9, *, #) that callers must press to request a callback. This key will be monitored while callers are waiting in the queue. Default is # (pound). Make sure this key matches what you tell callers in your announcement.") ?></span>
         </div>
     </div>
 </div>

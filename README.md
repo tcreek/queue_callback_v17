@@ -7,8 +7,19 @@ Callers can request a callback instead of waiting on hold. The processor only re
 
 ## Status
 
-🚧 **Version 17.0.4.2 Beta 4**  
-Core logic should be fully functional, but some behaviors still need refinement (see **Known Issues**).
+🚧 **Version 17.0.4.5 Beta 4 — updated October 26, 2026**
+
+Periodic callback announcements are working again and have been confirmed in a live test call, including for a caller waiting alone.
+
+Recent updates:
+
+- Queue Callback Instruction defaults to **30 seconds**; the frequency menu displays seconds and saves the selected interval.
+- New callback configurations default to **# (pound)**. Existing saved keys and intervals are preserved. Match your instruction recording to the selected callback key.
+- Breakout IVR coexistence is implemented: keep the IVR selection in the Queues module. The callback key takes priority if both use the same key; other IVR keys remain available.
+- Repeated configuration generation replaces the security blocklist context and removes legacy duplicates.
+- The settings explain callback/IVR key conflicts, and a diagnostic logs the configured announcement, interval, language, and call identifiers at queue entry.
+
+PHP syntax and dialplan generation checks passed. Breakout IVR coexistence and the new default key still need live call verification after Apply Config. The module remains in beta.
 
 ---
 
@@ -61,13 +72,11 @@ This module will function on any FreePBX-based system, including:
 
 ---
 
-## Known Issues (Beta 3)
+## Known Issues / Verification Pending
 
-None known yet
-
-
-
-
+- Compound recordings joined with `&` are not supported by Asterisk's periodic-announcement playback. Select a single recording containing the complete Queue Callback Instruction.
+- If the callback key is also an IVR menu key, that IVR option is reserved for callbacks while Queue Callback is enabled. Choose an unused key.
+- Live verification of breakout IVR routing alongside callbacks is pending.
 
 ---
 

@@ -196,15 +196,20 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                         </div>
                     </div>
 
+<div class="alert alert-warning" role="alert">
+    <strong><?php echo _("Breakout IVR and callback keys") ?></strong>
+    <?php echo _("The Breakout IVR selected in the Queues module remains available while Queue Callback is enabled. The callback key takes priority if the IVR uses the same key. Choose a callback key that is not used by the Breakout IVR menu. The Queue Callback Instruction selected here is the periodic announcement played while waiting.") ?>
+</div>
+
                     <div class="form-group">
                         <label class="col-sm-3 control-label">
                             <?php echo _("Callback Key") ?>
                             <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
-                               title="<?php echo _("Key callers press to request callback while in the queue. Common choices are * (asterisk) or # (pound). Default is *.") ?>"></i>
+                               title="<?php echo _("Key callers press to request callback while in the queue. Default is # (pound). You can also choose a digit or * (star).") ?>"></i>
                         </label>
                         <div class="col-sm-9">
                             <input type="text" class="form-control" name="callback_key" 
-                                   value="<?php echo htmlentities($callback_config['callback_key']) ?>" 
+                                   value="<?php echo htmlentities(($callback_config['callback_key'] ?? '#')) ?>" 
                                    maxlength="1" style="width: 60px;">
                         </div>
                     </div>
@@ -218,7 +223,7 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                                title="<?php echo _("How often (in seconds) the system should check for and process pending callback requests. Lower values mean faster callbacks but more system load. Recommended: 30 seconds.") ?>"></i>
                         </label>
                         <div class="col-sm-9">
-                            <div class="input-group" style="width: 120px;">
+                            <div class="input-group" style="width: 180px;">
                                 <input type="number" class="form-control" name="callback_processing_interval" 
                                        value="<?php echo $callback_config['processing_interval'] ?>" 
                                        min="1" max="120">
@@ -234,7 +239,7 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                                title="<?php echo _("Maximum number of times the system will try to call back a customer before giving up. Recommended: 3 attempts.") ?>"></i>
                         </label>
                         <div class="col-sm-9">
-                            <div class="input-group" style="width: 120px;">
+                            <div class="input-group" style="width: 180px;">
                                 <input type="number" class="form-control" name="callback_max_attempts" 
                                        value="<?php echo $callback_config['max_attempts'] ?? 3 ?>" 
                                        min="1" max="10">
@@ -250,7 +255,7 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                                title="<?php echo _("Time to wait (in minutes) between callback attempts if the first attempt fails. Recommended: 5-15 minutes.") ?>"></i>
                         </label>
                         <div class="col-sm-9">
-                            <div class="input-group" style="width: 120px;">
+                            <div class="input-group" style="width: 180px;">
                                 <input type="number" class="form-control" name="callback_retry_interval" 
                                        value="<?php echo $callback_config['retry_interval'] ?? 5 ?>" 
                                        min="1" max="120">
@@ -315,7 +320,7 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                                 <label class="col-sm-3 control-label" style="white-space:nowrap;">
                                     <?php echo _("Queue Callback Instruction") ?>
                                     <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
-                                       title="<?php echo _("Announcement played AFTER the queue's initial announcement to instruct callers how to request a callback. Example: 'If you would like us to call you back instead of waiting, press star now.'") ?>"></i>
+                                       title="<?php echo _("Announcement played AFTER the queue's initial announcement to instruct callers how to request a callback. Example: 'If you would like us to call you back instead of waiting, press pound (#) now.'") ?>"></i>
                                 </label>
                                 <div class="col-sm-9">
                                     <select class="form-control" name="callback_announce_id">
@@ -334,14 +339,16 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                                 <label class="col-sm-3 control-label">
                                     <?php echo _("Instruction Frequency") ?>
                                     <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
-                                       title="<?php echo _("How often (in minutes) to play the callback instruction announcement to callers waiting in the queue. Default: 1 minute.") ?>"></i>
+                                       title="<?php echo _("How often to play the Queue Callback Instruction while waiting in the queue. Default: 30 seconds. This interval controls the first announcement and subsequent repeats.") ?>"></i>
                                 </label>
                                 <div class="col-sm-9">
-                                    <div class="input-group" style="width: 120px;">
-                                        <input type="number" class="form-control" name="callback_announce_frequency" 
-                                               value="<?php echo $callback_config['announce_frequency'] ?? 1 ?>" 
-                                               min="1" max="15">
-                                        <span class="input-group-addon"><?php echo _("min") ?></span>
+                                    <div class="input-group" style="width: 180px;">
+                                        <select class="form-control" id="callback_announce_frequency" name="callback_announce_frequency">
+                                            <?php foreach (range(0, 15) as $frequency): ?>
+                                                <option value="<?php echo $frequency ?>" <?php echo (int)($callback_config['announce_frequency'] ?? 0) === $frequency ? 'selected' : '' ?>><?php echo $frequency === 0 ? 30 : $frequency * 60 ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                        <span class="input-group-addon"><?php echo _("seconds") ?></span>
                                     </div>
                                 </div>
                             </div>

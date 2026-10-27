@@ -71,8 +71,8 @@ try {
         
         if ($config && $config['enabled']) {
             agi_request("SET VARIABLE QUEUE_CALLBACK_ENABLED 1");
-            agi_request("SET VARIABLE QUEUE_CALLBACK_KEY " . ($config['callback_key'] ?: "*"));
-            agi_request("VERBOSE \"Queue $queue_id has callback enabled with key " . ($config['callback_key'] ?: "*") . "\"");
+            agi_request("SET VARIABLE QUEUE_CALLBACK_KEY " . ($config['callback_key'] ?: "#"));
+            agi_request("VERBOSE \"Queue $queue_id has callback enabled with key " . ($config['callback_key'] ?: "#") . "\"");
         } else {
             agi_request("SET VARIABLE QUEUE_CALLBACK_ENABLED 0");
             agi_request("VERBOSE \"Queue $queue_id callback is disabled\"");

@@ -1,18 +1,30 @@
 <?php
+/**
+ * Queue Callback Module for FreePBX
+ *
+ * Copyright (C) 2026 Trent Creekmore 
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 namespace FreePBX\modules;
 
 use BMO;
 use FreePBX_Helpers;
 use PDO;
 
-/**
- * Queue Callback FreePBX Module Class
- * - Generates queue handler dialplan
- * - Installs/maintains AGIs
- * - Manages asterisk-user cron block (no root/system edits)
- * - Uses VQ_GOSUB/QGOSUB so Queue() passes our handler
- */
-class Qcallback extends FreePBX_Helpers implements BMO {
+class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original class name/namespace
 
     /** @var \FreePBX */
     protected $FreePBX;
@@ -20,28 +32,48 @@ class Qcallback extends FreePBX_Helpers implements BMO {
     /** @var \PDO */
     protected $db;
 
+    public const DEFAULT_ANNOUNCEMENTS = [
+        'announce_id'         => 'custom/callback-announcement',
+        'alt_message_id'      => 'custom/alternate_num_instruct',
+        'confirm_message_id'  => 'custom/confirm_number',
+        'return_message_id'   => 'custom/callback_returned',
+        'initiated_message_id'=> 'custom/callback_initiated',
+        'confirm_prompt_id'   => 'custom/callback_confirm',
+    ];
+
     public function __construct($freepbx = null) {
         $this->FreePBX = $freepbx;
         $this->db = $freepbx->Database;
     }
 
-    /* -------------------------
+    /* ------------------------------------------------------------------
      * Helpers
-     * -------------------------*/
+     * ------------------------------------------------------------------*/
     private function isCli(): bool {
         return (PHP_SAPI === 'cli');
     }
 
+    private function isWebPost(): bool {
+        return (PHP_SAPI !== 'cli') && (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST');
+    }
+
+    private function isModulePost(string $module = 'qcallback'): bool {
+        return $this->isWebPost() && (($_POST['display'] ?? '') === $module);
+    }
+
     private function flagNeedReload(): void {
-        if (function_exists('needreload')) { needreload(); }
-        if ($this->FreePBX && method_exists($this->FreePBX, 'needreload')) {
+        if (function_exists('needreload')) {
+            needreload();
+        }
+        if (isset($this->FreePBX) && method_exists($this->FreePBX, 'needreload')) {
             $this->FreePBX->needreload();
         }
     }
 
     private function safeExec(string $cmd): void {
-        // Only execute from CLI to avoid permission/shell issues from web
-        if ($this->isCli()) { @exec($cmd); }
+        if ($this->isCli()) {
+            @exec($cmd);
+        }
     }
 
     private function reloadDialplan(): void {
@@ -52,19 +84,24 @@ class Qcallback extends FreePBX_Helpers implements BMO {
         }
     }
 
-    /* -------------------------
-     * BMO required
-     * -------------------------*/
+    /* ------------------------------------------------------------------
+     * BMO Required Methods
+     * ------------------------------------------------------------------*/
     public function install() {
-        $this->installAgiScripts(); // ensure our PDO AGIs are in place
-        // Do not touch cron or dialplan here; generation occurs on enable/save
+        $this->installModuleFiles();
+        $this->installMenuConfiguration();
+        $this->installDatabaseTables();
+        $this->setupCallbackEvents();
+        $this->installAgiScripts();
+        $this->installCallbackDialplan();
     }
 
     public function uninstall() {
+        $this->cleanupCallbackEvents();
         $this->uninstallAgiScripts();
-        // remove our cron if nothing enabled (or force)
-        $this->removeCronIfNoQueues(true);
-        // FreePBX will rebuild stock dialplans
+        $this->uninstallCallbackDialplan();
+        $this->uninstallMenuConfiguration();
+        $this->uninstallModuleFiles();
     }
 
     public function backup() {
@@ -73,13 +110,15 @@ class Qcallback extends FreePBX_Helpers implements BMO {
             'queuecallback_requests' => []
         ];
         try {
-            $st = $this->db->query('SELECT * FROM queuecallback_config');
-            $out['queuecallback_config'] = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            $stmt = $this->db->query('SELECT * FROM queuecallback_config');
+            $out['queuecallback_config'] = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         } catch (\Throwable $e) {}
+
         try {
-            $st = $this->db->query('SELECT * FROM queuecallback_requests WHERE status != "completed"');
-            $out['queuecallback_requests'] = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            $stmt = $this->db->query('SELECT * FROM queuecallback_requests WHERE status != "completed"');
+            $out['queuecallback_requests'] = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         } catch (\Throwable $e) {}
+
         return $out;
     }
 
@@ -101,8 +140,16 @@ class Qcallback extends FreePBX_Helpers implements BMO {
         }
     }
 
-    public function doConfigPageInit($page) { return; }
+    /**
+     * Called for *every* page load. DO NOT reload/generate here.
+     */
+    public function doConfigPageInit($page) {
+        return;
+    }
 
+    /**
+     * Optional: render extra UI on queue pages.
+     */
     public function showPage() {
         $request = $_REQUEST;
         if (($request['display'] ?? '') === 'queues' && !empty($request['extdisplay'])) {
@@ -112,43 +159,55 @@ class Qcallback extends FreePBX_Helpers implements BMO {
         }
     }
 
-    /* -------------------------
-     * Public API
-     * -------------------------*/
-    /**
-     * Generate all dialplan artifacts, include orders, and cron decisions.
-     * Always re-install AGIs so our PDO versions stay active.
-     */
-    public function generateCallbackDialplan(bool $force = false): void {
-        if (!$this->isCli() && !$force) { return; }
+    /* ------------------------------------------------------------------
+     * Public API used by your module UI / hooks
+     * ------------------------------------------------------------------*/
 
-        // keep AGIs correct on every regen
-        $this->installAgiScripts();
-
-        $configs = $this->getEnabledQueuesWithConfig();
-
-        // Always write contexts (and remove stale ones)
-        $this->generateQueuesPostCustom($configs);
-        $this->generateExtensionsHandlers($configs);
-        $this->generateExtensionsOverride($configs);
-        $this->ensureQueuesIncludeOrder();
-
-        $this->reloadDialplan();
-
-        // Cron only if any queue enabled; remove if none
-        if (!empty($configs)) {
-            $this->ensureCronIfQueues();
-        } else {
-            $this->removeCronIfNoQueues();
+    public function processIntelligentCallbacks(): void {
+        $script = __DIR__ . '/process_callbacks.php';
+        if (file_exists($script)) {
+            if ($this->isCli()) {
+                @exec('/usr/bin/php ' . escapeshellarg($script) . ' 2>&1');
+            } else {
+                @shell_exec('/usr/bin/php ' . escapeshellarg($script) . ' >/dev/null 2>&1 &');
+            }
         }
     }
 
-    /* -------------------------
-     * Config access
-     * -------------------------*/
+    /**
+     * Generate callback dialplan & queue configs.
+     * Only runs in CLI unless $force=true.
+     * Set $reload=false when FreePBX is already generating configuration.
+     */
+    public function generateCallbackDialplan(bool $force = false, bool $reload = true): void {
+        if (!$this->isCli() && !$force) {
+            return;
+        }
+
+        $configs = $this->getEnabledQueuesWithConfig();
+        if (empty($configs)) {
+            return;
+        }
+
+        $this->generateQueuesPostCustomWorking($configs);  // periodic announce
+        $this->generateExtensionsCustomWorking($configs);  // handlers + hangup
+        $this->generateExtensionsOverride($configs);       // override to strip H + add G()
+        $this->ensureQueuesIncludeOrder();
+        $this->generateSecurityDialplanFile();
+
+        // FreePBX reloads Asterisk after all modules have generated their files.
+        if ($reload) {
+            $this->safeExec('asterisk -rx "module reload app_queue.so"');
+            $this->reloadDialplan();
+        }
+    }
+
+    /* ------------------------------------------------------------------
+     * Data access / config
+     * ------------------------------------------------------------------*/
     private function getEnabledQueuesWithConfig(): array {
         try {
-            $sql = "SELECT queue_id, announce_id, announce_frequency, callback_key, confirm_message_id
+            $sql = "SELECT queue_id, announce_id, announce_frequency, callback_key, alt_number_key, confirm_number, confirm_message_id, alt_message_id, return_message_id, initiated_message_id, confirm_prompt_id
                     FROM queuecallback_config WHERE enabled = 1";
             $stmt = $this->db->prepare($sql);
             $stmt->execute();
@@ -156,57 +215,98 @@ class Qcallback extends FreePBX_Helpers implements BMO {
             $out = [];
             foreach ($rows as $r) {
                 $out[] = [
-                    'queue_id'           => $r['queue_id'],
-                    'announce_file'      => $this->resolveAnnouncementFile($r['announce_id']) ?: 'custom/callback-announcement',
-                    'announce_frequency' => (int)($r['announce_frequency'] ?? 1),
-                    'callback_key'       => (!empty($r['callback_key']) && $this->isValidKey($r['callback_key'])) ? $r['callback_key'] : '*',
-                    'confirm_prompt'     => 'custom/confirm_number', // Always use hardcoded confirmation prompt
-                    'callback_started_file' => 'thank-you-for-calling',
+                    'queue_id'             => $r['queue_id'],
+                    'breakout_context'     => $this->getQueueBreakoutContext($r['queue_id']),
+                    'announce_id'          => $r['announce_id'] ?: self::DEFAULT_ANNOUNCEMENTS['announce_id'],
+                    'announce_frequency'   => (int)($r['announce_frequency'] ?? 0),
+                    'callback_key'         => $r['callback_key'] ?: '#',
+                    'alt_number_key'       => $r['alt_number_key'] ?: '',
+                    'confirm_number'       => isset($r['confirm_number']) ? (int)$r['confirm_number'] : 1,
+                    'announce_file'        => $this->resolveOrDefault($r['announce_id'], 'announce_id'),
+                    'confirm_message_file' => $this->resolveOrDefault($r['confirm_message_id'] ?? null, 'confirm_message_id'),
+                    'alt_message_file'     => $this->resolveOrDefault($r['alt_message_id'] ?? null, 'alt_message_id'),
+                    'return_message_file'  => $this->resolveOrDefault($r['return_message_id'] ?? null, 'return_message_id'),
+                    'initiated_message_file' => $this->resolveOrDefault($r['initiated_message_id'] ?? null, 'initiated_message_id'),
+                    'confirm_prompt_file'    => $this->resolveOrDefault($r['confirm_prompt_id'] ?? null, 'confirm_prompt_id'),
                 ];
             }
             return $out;
-        } catch (\Throwable $e) { return []; }
+        } catch (\Throwable $e) {
+            return [];
+        }
     }
 
-    private function resolveAnnouncementFile($id): string {
-        if (empty($id)) { return ''; }
+    private function getQueueBreakoutContext($queue_id): string {
+        $stmt = $this->db->prepare("SELECT ivr_id FROM queues_config WHERE extension = ?");
+        $stmt->execute([$queue_id]);
+        $ivrId = (string)$stmt->fetchColumn();
+        // FreePBX IVR identifiers are numeric. Never emit arbitrary dialplan text.
+        return preg_match('/^[0-9]+$/D', $ivrId) ? 'ivr-' . $ivrId : '';
+    }
+
+    private function resolveOrDefault($announce_id, string $field): string {
+        if (!empty($announce_id)) {
+            $resolved = $this->resolveAnnouncementFile($announce_id);
+            if ($resolved !== '' && $resolved !== 'please-hold') {
+                return $resolved;
+            }
+        }
+        return self::DEFAULT_ANNOUNCEMENTS[$field] ?? '';
+    }
+
+    private function resolveAnnouncementFile($announce_id): string {
+        if (empty($announce_id)) {
+            return '';
+        }
         try {
-            // recordings_details (preferred language-specific)
-            $tables = $this->db->query("SHOW TABLES LIKE 'recordings_details'")->fetchAll(PDO::FETCH_ASSOC);
+            $tables = $this->db->query("SHOW TABLES LIKE 'recordings_details'")->fetchAll();
             if (!empty($tables)) {
                 $stmt = $this->db->prepare("SELECT filename FROM recordings_details WHERE id = ? AND language = 'en' LIMIT 1");
-                $stmt->execute([$id]);
+                $stmt->execute([$announce_id]);
                 $res = $stmt->fetch(PDO::FETCH_ASSOC);
                 if (!$res) {
                     $stmt = $this->db->prepare("SELECT filename FROM recordings_details WHERE id = ? LIMIT 1");
-                    $stmt->execute([$id]);
+                    $stmt->execute([$announce_id]);
                     $res = $stmt->fetch(PDO::FETCH_ASSOC);
                 }
                 if (!empty($res['filename'])) {
                     return $this->normalizeSoundFile($res['filename']);
                 }
             }
-            // recordings
-            $stmt = $this->db->prepare("SELECT filename FROM recordings WHERE id = ? LIMIT 1");
-            $stmt->execute([$id]);
+
+            $stmt = $this->db->prepare("SELECT filename, displayname FROM recordings WHERE id = ? LIMIT 1");
+            $stmt->execute([$announce_id]);
             $res = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!empty($res['filename'])) {
-                return $this->normalizeSoundFile($res['filename']);
+            if ($res) {
+                if (!empty($res['filename'])) {
+                    return $this->normalizeSoundFile($res['filename']);
+                }
+                if (!empty($res['displayname'])) {
+                    $map = [
+                        'callback announcement'   => 'please-hold',
+                        'queue announcement'      => 'please-hold',
+                        'please hold'             => 'please-hold',
+                        'thank you for calling'   => 'thank-you-for-calling',
+                    ];
+                    $dn = strtolower($res['displayname']);
+                    return $map[$dn] ?? 'please-hold';
+                }
             }
-            // soundlang
+
             $stmt = $this->db->prepare("SELECT filename FROM soundlang WHERE id = ? AND language = 'en' LIMIT 1");
-            $stmt->execute([$id]);
+            $stmt->execute([$announce_id]);
             $res = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$res) {
                 $stmt = $this->db->prepare("SELECT filename FROM soundlang WHERE id = ? LIMIT 1");
-                $stmt->execute([$id]);
+                $stmt->execute([$announce_id]);
                 $res = $stmt->fetch(PDO::FETCH_ASSOC);
             }
             if (!empty($res['filename'])) {
                 return $this->normalizeSoundFile($res['filename']);
             }
         } catch (\Throwable $e) {}
-        return '';
+
+        return 'please-hold';
     }
 
     private function normalizeSoundFile(string $filename): string {
@@ -214,11 +314,11 @@ class Qcallback extends FreePBX_Helpers implements BMO {
         $f = ltrim($f, '/');
         $f = preg_replace('#^var/lib/asterisk/sounds/#i', '', $f);
         $f = preg_replace('#^asterisk/sounds/#i', '', $f);
-        // strip language prefix
-        $f = preg_replace('#^[a-z]{2}(?:_[A-Z]{2})?/#', '', $f);
-        // strip extension
+        if (preg_match('#^[a-z]{2}/#i', $f)) {
+            $f = substr($f, 3);
+        }
         $f = preg_replace('/\.(wav|ulaw|alaw|gsm|sln|sln16|g722|mp3)$/i', '', $f);
-        return $f;
+        return $f ?: 'please-hold';
     }
 
     public function getQueueCallbackConfig($queue_id) {
@@ -226,23 +326,28 @@ class Qcallback extends FreePBX_Helpers implements BMO {
             $stmt = $this->db->prepare("SELECT * FROM queuecallback_config WHERE queue_id = ?");
             $stmt->execute([$queue_id]);
             $res = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($res) { return $res; }
+            if ($res) {
+                return $res;
+            }
         } catch (\Throwable $e) {}
-        // defaults
         return [
-            'queue_id'           => $queue_id,
-            'enabled'            => 0,
-            'announce_id'        => null,
-            'announce_frequency' => 1,
-            'callback_key'       => '*',
-            'processing_interval'=> 5,
-            'max_attempts'       => 3,
-            'retry_interval'     => 5,
-            'return_message_id'  => null,
-            'confirm_message_id' => null,
-            'confirm_number'     => 1,
-            'alt_number_key'     => '2',
-            'call_first'         => 'customer',
+            'queue_id'            => $queue_id,
+            'enabled'             => 0,
+            'announce_id'         => null,
+            'announce_frequency'  => 0,
+            'callback_key'        => '#',
+            'processing_interval' => 30,
+            'max_attempts'        => 3,
+            'retry_interval'      => 30,
+            'return_message_id'   => null,
+            'confirm_message_id'  => null,
+            'confirm_number'      => 1,
+            'alt_number_key'      => '2',
+            'alt_message_id'      => null,
+            'initiated_message_id'=> null,
+            'confirm_prompt_id'   => null,
+            'call_first'          => 'customer',
+            'outbound_route_id'   => 1
         ];
     }
 
@@ -252,8 +357,8 @@ class Qcallback extends FreePBX_Helpers implements BMO {
         }
 
         $sql = "INSERT INTO queuecallback_config
-                (queue_id, enabled, announce_id, announce_frequency, callback_key, processing_interval, max_attempts, retry_interval, return_message_id, confirm_message_id, confirm_number, alt_number_key, call_first)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                (queue_id, enabled, announce_id, announce_frequency, callback_key, processing_interval, max_attempts, retry_interval, return_message_id, confirm_message_id, confirm_number, alt_number_key, alt_message_id, initiated_message_id, confirm_prompt_id, call_first, outbound_route_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON DUPLICATE KEY UPDATE
                 enabled=VALUES(enabled),
                 announce_id=VALUES(announce_id),
@@ -266,14 +371,18 @@ class Qcallback extends FreePBX_Helpers implements BMO {
                 confirm_message_id=VALUES(confirm_message_id),
                 confirm_number=VALUES(confirm_number),
                 alt_number_key=VALUES(alt_number_key),
-                call_first=VALUES(call_first)";
+                alt_message_id=VALUES(alt_message_id),
+                initiated_message_id=VALUES(initiated_message_id),
+                confirm_prompt_id=VALUES(confirm_prompt_id),
+                call_first=VALUES(call_first),
+                outbound_route_id=VALUES(outbound_route_id)";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
             $queue_id,
             $config['enabled'] ?? 0,
             $config['announce_id'] ?? null,
-            $config['announce_frequency'] ?? 1,
-            $config['callback_key'] ?? '*',
+            max(0, min(15, (int)($config['announce_frequency'] ?? 0))),
+            $config['callback_key'] ?? '#',
             $config['processing_interval'] ?? 5,
             $config['max_attempts'] ?? 3,
             $config['retry_interval'] ?? 5,
@@ -281,207 +390,373 @@ class Qcallback extends FreePBX_Helpers implements BMO {
             $config['confirm_message_id'] ?? null,
             $config['confirm_number'] ?? 1,
             $config['alt_number_key'] ?? '2',
-            $config['call_first'] ?? 'customer'
+            $config['alt_message_id'] ?? null,
+            $config['initiated_message_id'] ?? null,
+            $config['confirm_prompt_id'] ?? null,
+            $config['call_first'] ?? 'customer',
+            $config['outbound_route_id'] ?? 1
         ]);
+        $isNewConfig = $stmt->rowCount() === 1;
 
-        $this->syncSmallBitsToAstDB($queue_id, $config);
+        $this->syncConfigToAsteriskDB($queue_id, $config);
 
-        // Generate dialplan & cron decisions
+        if ($isNewConfig || ($config['enabled'] ?? 0)) {
+            $this->populateDefaultSecurityEntries($queue_id);
+        }
+
+        $this->setupCallbackEvents();
+        $this->updateCronJob();
+        $this->ensureCronJobExists();
+
         $this->generateCallbackDialplan(true);
+
         $this->flagNeedReload();
 
         $action = ($config['enabled'] ?? 0) ? 'enabled' : 'disabled';
-        freepbx_log(FPBX_LOG_INFO, "Queue Callback: $action for queue $queue_id");
+        freepbx_log(FPBX_LOG_INFO, "Queue Callback: $action callback for queue $queue_id");
+    }
+
+    private function populateDefaultSecurityEntries(string $queue_id): void {
+        try {
+            $existing = $this->db->prepare("SELECT COUNT(*) as cnt FROM queuecallback_security WHERE queue_id = ?");
+            $existing->execute([$queue_id]);
+            $res = $existing->fetch(PDO::FETCH_ASSOC);
+            if ($res['cnt'] > 0) {
+                return;
+            }
+            $entries = [
+                ['pattern' => '_268NXXXXXX', 'description' => 'Antigua and Barbuda', 'area_code' => '268', 'enabled' => 1, 'sort_order' => 10],
+                ['pattern' => '_284NXXXXXX', 'description' => 'British Virgin Islands', 'area_code' => '284', 'enabled' => 1, 'sort_order' => 20],
+                ['pattern' => '_345NXXXXXX', 'description' => 'Cayman Islands', 'area_code' => '345', 'enabled' => 1, 'sort_order' => 30],
+                ['pattern' => '_473NXXXXXX', 'description' => 'Grenada', 'area_code' => '473', 'enabled' => 1, 'sort_order' => 40],
+                ['pattern' => '_649NXXXXXX', 'description' => 'Turks and Caicos Islands', 'area_code' => '649', 'enabled' => 1, 'sort_order' => 50],
+                ['pattern' => '_664NXXXXXX', 'description' => 'Montserrat', 'area_code' => '664', 'enabled' => 1, 'sort_order' => 60],
+                ['pattern' => '_721NXXXXXX', 'description' => 'Sint Maarten', 'area_code' => '721', 'enabled' => 1, 'sort_order' => 70],
+                ['pattern' => '_758NXXXXXX', 'description' => 'Saint Lucia', 'area_code' => '758', 'enabled' => 1, 'sort_order' => 80],
+                ['pattern' => '_767NXXXXXX', 'description' => 'Dominica', 'area_code' => '767', 'enabled' => 1, 'sort_order' => 90],
+                ['pattern' => '_784NXXXXXX', 'description' => 'Saint Vincent and the Grenadines', 'area_code' => '784', 'enabled' => 1, 'sort_order' => 100],
+                ['pattern' => '_809NXXXXXX', 'description' => 'Dominican Republic', 'area_code' => '809', 'enabled' => 1, 'sort_order' => 110],
+                ['pattern' => '_829NXXXXXX', 'description' => 'Dominican Republic', 'area_code' => '829', 'enabled' => 1, 'sort_order' => 120],
+                ['pattern' => '_849NXXXXXX', 'description' => 'Dominican Republic', 'area_code' => '849', 'enabled' => 1, 'sort_order' => 130],
+                ['pattern' => '_868NXXXXXX', 'description' => 'Trinidad and Tobago', 'area_code' => '868', 'enabled' => 1, 'sort_order' => 140],
+                ['pattern' => '_869NXXXXXX', 'description' => 'Saint Kitts and Nevis', 'area_code' => '869', 'enabled' => 1, 'sort_order' => 150],
+                ['pattern' => '_876NXXXXXX', 'description' => 'Jamaica', 'area_code' => '876', 'enabled' => 1, 'sort_order' => 160],
+                ['pattern' => '_1268NXXXXXX', 'description' => 'Antigua and Barbuda (+1)', 'area_code' => '1268', 'enabled' => 1, 'sort_order' => 170],
+                ['pattern' => '_1284NXXXXXX', 'description' => 'British Virgin Islands (+1)', 'area_code' => '1284', 'enabled' => 1, 'sort_order' => 180],
+                ['pattern' => '_1345NXXXXXX', 'description' => 'Cayman Islands (+1)', 'area_code' => '1345', 'enabled' => 1, 'sort_order' => 190],
+                ['pattern' => '_1473NXXXXXX', 'description' => 'Grenada (+1)', 'area_code' => '1473', 'enabled' => 1, 'sort_order' => 200],
+                ['pattern' => '_1649NXXXXXX', 'description' => 'Turks and Caicos Islands (+1)', 'area_code' => '1649', 'enabled' => 1, 'sort_order' => 210],
+                ['pattern' => '_1664NXXXXXX', 'description' => 'Montserrat (+1)', 'area_code' => '1664', 'enabled' => 1, 'sort_order' => 220],
+                ['pattern' => '_1721NXXXXXX', 'description' => 'Sint Maarten (+1)', 'area_code' => '1721', 'enabled' => 1, 'sort_order' => 230],
+                ['pattern' => '_1758NXXXXXX', 'description' => 'Saint Lucia (+1)', 'area_code' => '1758', 'enabled' => 1, 'sort_order' => 240],
+                ['pattern' => '_1767NXXXXXX', 'description' => 'Dominica (+1)', 'area_code' => '1767', 'enabled' => 1, 'sort_order' => 250],
+                ['pattern' => '_1784NXXXXXX', 'description' => 'Saint Vincent and the Grenadines (+1)', 'area_code' => '1784', 'enabled' => 1, 'sort_order' => 260],
+                ['pattern' => '_1809NXXXXXX', 'description' => 'Dominican Republic (+1)', 'area_code' => '1809', 'enabled' => 1, 'sort_order' => 270],
+                ['pattern' => '_1829NXXXXXX', 'description' => 'Dominican Republic (+1)', 'area_code' => '1829', 'enabled' => 1, 'sort_order' => 280],
+                ['pattern' => '_1849NXXXXXX', 'description' => 'Dominican Republic (+1)', 'area_code' => '1849', 'enabled' => 1, 'sort_order' => 290],
+                ['pattern' => '_1868NXXXXXX', 'description' => 'Trinidad and Tobago (+1)', 'area_code' => '1868', 'enabled' => 1, 'sort_order' => 300],
+                ['pattern' => '_1869NXXXXXX', 'description' => 'Saint Kitts and Nevis (+1)', 'area_code' => '1869', 'enabled' => 1, 'sort_order' => 310],
+                ['pattern' => '_1876NXXXXXX', 'description' => 'Jamaica (+1)', 'area_code' => '1876', 'enabled' => 1, 'sort_order' => 320],
+            ];
+            $stmt = $this->db->prepare("INSERT INTO queuecallback_security (pattern, description, area_code, queue_id, enabled, sort_order, created_at) VALUES (?,?,?,?,?,?,?)");
+            foreach ($entries as $entry) {
+                $stmt->execute([
+                    $entry['pattern'],
+                    $entry['description'],
+                    $entry['area_code'],
+                    $queue_id,
+                    $entry['enabled'],
+                    $entry['sort_order'],
+                    time(),
+                ]);
+            }
+            freepbx_log(FPBX_LOG_INFO, "Queue Callback: Auto-populated " . count($entries) . " default security entries for queue $queue_id");
+        } catch (\Throwable $e) {
+            freepbx_log(FPBX_LOG_WARNING, "Queue Callback: Could not populate default security entries for $queue_id: " . $e->getMessage());
+        }
     }
 
     private function validateQueue($queue_id): bool {
-        $st = $this->db->prepare("SELECT extension FROM queues_config WHERE extension = ?");
-        $st->execute([$queue_id]);
-        return (bool)$st->fetch(PDO::FETCH_ASSOC);
+        $stmt = $this->db->prepare("SELECT extension FROM queues_config WHERE extension = ?");
+        $stmt->execute([$queue_id]);
+        return (bool)$stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    private function syncSmallBitsToAstDB($queue_id, $config): void {
+    private function syncConfigToAsteriskDB($queue_id, $config): void {
         try {
-            $ckey = $config['callback_key'] ?? '*';
-            $this->safeExec(sprintf('asterisk -rx %s', escapeshellarg("database put QCALLBACK/$queue_id callback_key $ckey")));
+            $ak = $config['callback_key'] ?? '#';
+            $this->safeExec(sprintf('asterisk -rx %s', escapeshellarg("database put QCALLBACK/$queue_id callback_key $ak")));
+
             if (!empty($config['announce_id'])) {
                 $this->safeExec(sprintf('asterisk -rx %s', escapeshellarg("database put QCALLBACK/$queue_id announce_id {$config['announce_id']}")));
             } else {
                 $this->safeExec(sprintf('asterisk -rx %s', escapeshellarg("database del QCALLBACK/$queue_id announce_id")));
             }
+
             if (!empty($config['return_message_id'])) {
                 $this->safeExec(sprintf('asterisk -rx %s', escapeshellarg("database put QCALLBACK/$queue_id return_message_id {$config['return_message_id']}")));
             } else {
                 $this->safeExec(sprintf('asterisk -rx %s', escapeshellarg("database del QCALLBACK/$queue_id return_message_id")));
             }
-        } catch (\Throwable $e) {}
+        } catch (\Throwable $e) {
+            // Ignore failures on web requests
+        }
+    }
+
+    /* ------------------------------------------------------------------
+     * File generation (called by generateCallbackDialplan())
+     * ------------------------------------------------------------------*/
+
+    /** Legacy values are minutes; zero selects the new 30-second default. */
+    public static function announcementFrequencySeconds($frequency): int {
+        $minutes = max(0, min(15, (int)$frequency));
+        return $minutes === 0 ? 30 : $minutes * 60;
+    }
+
+    private function generateQueuesPostCustomWorking(array $configs): void {
+        $qpcPath = '/etc/asterisk/queues_post_custom.conf';
+        $current = file_exists($qpcPath) ? file_get_contents($qpcPath) : '';
+        $current = preg_replace('/; Auto: queue callback context.*$/s', '', $current);
+        // Replace both current and legacy blocks without retaining stale queue settings.
+        $current = preg_replace('/^; BEGIN QCB(?:_DB)? AUTO[^\r\n]*\R[\s\S]*?^; END QCB(?:_DB)? AUTO[^\r\n]*(?:\R|$)/m', '', $current);
+
+        $buf = "\n; BEGIN QCB_DB AUTO (generated " . date('Y-m-d H:i:s') . ")\n";
+        $freqSecMap = [];
+        foreach ($configs as $c) {
+            $qid = $c['queue_id'];
+            $ann = $c['announce_file'];
+            $freqSec = self::announcementFrequencySeconds($c['announce_frequency'] ?? 0);
+            $freqSecMap[$qid] = $freqSec;
+
+            $buf .= "[$qid](+)\n";
+            $buf .= "context=queuecallback-exit-$qid\n";
+            if (!empty($ann)) {
+                // Asterisk defaults this to no, suppressing announcements for
+                // callers at the head of the queue (including a lone caller).
+                $buf .= "announce-to-first-user=yes\n";
+                $buf .= "periodic-announce=$ann\n";
+                $buf .= "periodic-announce-startdelay=$freqSec\n";
+                $buf .= "periodic-announce-frequency=$freqSec\n";
+            }
+            $buf .= "\n";
+        }
+        $buf .= "; END QCB_DB AUTO\n";
+
+        $tmp = '/tmp/queues_post_custom_' . getmypid() . '.tmp';
+        file_put_contents($tmp, rtrim($current) . $buf);
+        copy($tmp, $qpcPath);
+        @unlink($tmp);
+        @chown($qpcPath, 'asterisk'); @chgrp($qpcPath, 'asterisk'); @chmod($qpcPath, 0664);
+
+        foreach ($freqSecMap as $qid => $freqSec) {
+            try {
+                $this->db->prepare("REPLACE INTO queues_details (id, keyword, data, flags) VALUES (?, 'periodic-announce-frequency', ?, 0)")->execute([$qid, $freqSec]);
+            } catch (\Exception $e) {
+                freepbx_log(FPBX_LOG_WARNING, "Queue Callback: Could not update periodic-announce-frequency for $qid: " . $e->getMessage());
+            }
+        }
+
+        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Wrote " . count($configs) . " queue sections to $qpcPath");
+    }
+
+    /**
+     * UPDATED: confirm prompt uses Read with n option so DTMF during audio is captured.
+     * Also adds TIMEOUTs and t/i handlers for better UX.
+     */
+    private function generateExtensionsCustomWorking(array $configs): void {
+        $ecPath = '/etc/asterisk/extensions_custom.conf';
+        $content = file_exists($ecPath) ? file_get_contents($ecPath) : '';
+
+        // Remove our managed handler contexts & hangup handler
+        foreach ($configs as $c) {
+            $qid = $c['queue_id'];
+            $content = preg_replace('/\n\[queuecallback-' . preg_quote($qid, '/') . '\][\s\S]*?(?=\n\[|\n; BEGIN QCB_SECURITY BLOCKLIST|\z)/', '', $content);
+            $content = preg_replace('/\n\[queuecallback-exit-' . preg_quote($qid, '/') . '\][\s\S]*?(?=\n\[|\n; BEGIN QCB_SECURITY BLOCKLIST|\z)/', '', $content);
+            $content = preg_replace('/\n\[qcb-handler-' . preg_quote($qid, '/') . '\][\s\S]*?(?=\n\[|\n; BEGIN QCB_SECURITY BLOCKLIST|\z)/', '', $content);
+        }
+        $content = preg_replace('/\n\[qcb-hangup\][\s\S]*?(?=\n\[|\n; BEGIN QCB_SECURITY BLOCKLIST|\z)/', '', $content);
+        $content = preg_replace('/\n\[queuecallback-agent-outbound\][\s\S]*?(?=\n\[|\n; BEGIN QCB_SECURITY BLOCKLIST|\z)/', '', $content);
+        $content = preg_replace('/\n\[qcb-customer-confirm\][\s\S]*?(?=\n\[|\n; BEGIN QCB_SECURITY BLOCKLIST|\z)/', '', $content);
+        $content = preg_replace('/\n\[qcb-complete\][\s\S]*?(?=\n\[|\n; BEGIN QCB_SECURITY BLOCKLIST|\z)/', '', $content);
+        // Remove stale [ext-queues] override with QCALLBACK QUEUE ROUTES markers
+        $content = preg_replace('/\n; BEGIN QCALLBACK QUEUE ROUTES.*?; END QCALLBACK QUEUE ROUTES\n/s', '', $content);
+        // Remove stale contexts from earlier module versions
+        $content = preg_replace('/\n\[queuecallback-handler-fixed\][\s\S]*?(?=\n\[|\n; BEGIN QCB_SECURITY BLOCKLIST|\z)/', '', $content);
+
+        // Shared hangup handler
+        $content .= "\n[qcb-hangup]\n";
+        $content .= "exten => s,1,NoOp(QCB hangup handler: Q=\${ARG1} NUM=\${ARG2})\n";
+        $content .= " same => n,Set(CALLBACK_QUEUE=\${ARG1})\n";
+        $content .= " same => n,Set(CALLBACK_NUMBER=\${ARG2})\n";
+        $content .= " same => n,Set(QCB_CONFIRMED=1)\n";
+        $content .= " same => n,Set(QCB_CONFIRM_SOURCE=hangup)\n";
+        $content .= " same => n,AGI(queuecallback-store.agi)\n";
+        $content .= " same => n,Return()\n\n";
+
+        // Build handler contexts
+        foreach ($configs as $c) {
+            $qid  = $c['queue_id'];
+            $ckey = $this->isValidKey($c['callback_key']) ? $c['callback_key'] : '#';
+            $alt  = (!empty($c['alt_number_key']) && $this->isValidKey($c['alt_number_key']) && $c['alt_number_key'] !== $ckey) ? $c['alt_number_key'] : '';
+            $confirm = (int)$c['confirm_number'];
+
+            // Keep queue exits separate from callback confirmation extensions.
+            // Local extensions take precedence over included IVR extensions, so
+            // a shared key always selects callback; other keys retain IVR routing.
+            $handler = "[queuecallback-exit-$qid]\n";
+            $breakoutContext = $c['breakout_context'] ?? '';
+            if (preg_match('/^ivr-[0-9]+$/D', $breakoutContext)) {
+                $handler .= "include => $breakoutContext\n";
+            }
+            $handler .= "exten => $ckey,1,NoOp(QCB: $qid callback exit key $ckey)\n";
+            $handler .= " same => n,Goto(queuecallback-$qid,$ckey,1)\n\n";
+
+            $ctx = "queuecallback-$qid";
+            $handler .= "[$ctx]\n";
+            // Entry point for Queue() gosub: s,1; we can read ${CHANNEL(dtmf-digit)} on Asterisk ≥18
+            $handler .= "exten => s,1,NoOp(QCB: DTMF in queue $qid from \${CALLERID(all)} digit=\${IF(\${ISNULL(\${CHANNEL(dtmf-digit)})}?unknown:\${CHANNEL(dtmf-digit)})})\n";
+            $handler .= " same => n,Set(QUEUENAME=$qid)\n";
+            $handler .= " same => n,Set(CALLBACK_NUMBER=\${CALLERID(num)})\n";
+            $handler .= " same => n,GotoIf(\$[\"\${CHANNEL(dtmf-digit)}\" = \"$ckey\"]?$ctx,$ckey,1)\n";
+            $handler .= " same => n,Return()\n";
+
+            // Direct-key handlers (test6 structure preserved)
+            $handler .= "exten => $ckey,1,NoOp(QCB: $qid caller pressed $ckey)\n";
+            $handler .= " same => n,Set(CALLBACK_NUMBER=\${CALLERID(num)})\n";
+            $handler .= " same => n,Set(CALLBACK_QUEUE=$qid)\n";
+            $handler .= " same => n,AGI(queuecallback-check.agi)\n";
+            $handler .= " same => n,GotoIf(\$[\"\${QUEUE_CALLBACK_ENABLED}\" = \"1\"]?confirm,1:unavailable)\n";
+            $handler .= " same => n(unavailable),Playback(im-sorry)\n";
+            $handler .= " same => n,Playback(goodbye)\n";
+            $handler .= " same => n,Hangup()\n";
+
+            $confirmFile = $c['confirm_message_file'] ?: 'beep';
+            $confirmPrompt = $c['confirm_prompt_file'] ?: self::DEFAULT_ANNOUNCEMENTS['confirm_prompt_id'];
+
+      // Confirm flow: play number + instruction, then read DTMF
+            $handler .= "exten => confirm,1,NoOp(QCB confirm menu for $qid)\n";
+            $handler .= " same => n,SayDigits(\${CALLBACK_NUMBER})\n";
+            $handler .= " same => n,Read(CONFIRM1,$confirmFile,1,n,5)\n";
+            $handler .= " same => n,GotoIf(\$[\"\${CONFIRM1}\" = \"\"]?cancel)\n";
+            $handler .= " same => n,GotoIf(\$[\"\${CONFIRM1}\" = \"1\"]?confirm2)\n";
+            if ($alt !== '') {
+                $handler .= " same => n,GotoIf(\$[\"\${CONFIRM1}\" = \"2\"]?alt,1:invalid)\n";
+            } else {
+                $handler .= " same => n,Goto(invalid)\n";
+            }
+            $handler .= " same => n(invalid),Playback(vm-invalid)\n";
+            $handler .= " same => n,Goto(confirm,1)\n";
+            $handler .= " same => n(confirm2),Wait(1)\n";
+            $handler .= " same => n,Read(CONFIRM2,$confirmPrompt,1,n,5)\n";
+            $handler .= " same => n,GotoIf(\$[\"\${CONFIRM2}\" = \"\"]?cancel)\n";
+            $handler .= " same => n,GotoIf(\$[\"\${CONFIRM2}\" != \"1\"]?confirm,1)\n";
+            $handler .= " same => n,Goto(queuecallback-$qid,store,1)\n";
+            $handler .= "exten => cancel,1,Playback(goodbye)\n";
+            $handler .= " same => n,Set(QCB_CONFIRMED=0)\n";
+            $handler .= " same => n,Hangup()\n";
+
+            if ($alt !== '') {
+                $handler .= "exten => alt,1,NoOp(QCB alt number entry for $qid)\n";
+                $altFile = $c['alt_message_file'];
+                if ($altFile !== '') {
+                    $handler .= " same => n,Playback($altFile)\n";
+                } else {
+                    $handler .= " same => n,Playback(please-enter-your)\n";
+                    $handler .= " same => n,Playback(at-following-number)\n";
+                }
+                $handler .= " same => n,Read(ALTNUM,beep,30,,,35)\n";
+                $handler .= " same => n,GotoIf(\$[\"\${ALTNUM}\" = \"\"]?alt,1)\n";
+                $handler .= " same => n,Set(CALLBACK_NUMBER=\${FILTER(0-9,\${ALTNUM})})\n";
+                $handler .= " same => n,Goto(queuecallback-$qid,store,1)\n";
+            }
+
+            // Store + finish
+            $handler .= "exten => store,1,Set(QCB_CONFIRMED=1)\n";
+            $handler .= " same => n,Set(QCB_CONFIRM_SOURCE=dtmf)\n";
+            $handler .= " same => n,AGI(queuecallback-store.agi)\n";
+            $handler .= " same => n,Playback({$c['initiated_message_file']})\n";
+            $handler .= " same => n,Playback(thank-you-for-calling)\n";
+            $handler .= " same => n,Playback(goodbye)\n";
+            $handler .= " same => n,Hangup()\n\n";
+
+            $content .= $handler;
+        }
+
+        // Agent-first outbound callback context
+        $content .= "\n[queuecallback-agent-outbound]\n";
+        $content .= "exten => s,1,NoOp(QCB: Processing agent-first callback for queue \${CALLBACK_QUEUE_ID})\n";
+        $content .= " same => n,Set(CALLERID(name)=Queue Callback)\n";
+        $content .= " same => n,Answer()\n";
+        $content .= " same => n,Wait(1)\n";
+        $content .= " same => n,Playback(you-will-be-connected-to-a-customer)\n";
+        $content .= " same => n,Set(__CALLBACK_RETURN_MSG=\${CALLBACK_RETURN_MSG})\n";
+        $content .= " same => n,Set(__CALLBACK_CUSTOMER_NUM=\${CALLBACK_CUSTOMER_NUM})\n";
+        $content .= " same => n,Dial(\${CALLBACK_CUSTOMER_CHANNEL},30,TtrU(qcb-customer-confirm))\n";
+        $content .= " same => n,Hangup()\n\n";
+
+        // Customer confirmation subroutine (agent-first flow)
+        // Play Return Call Announcement then connect the call
+        $content .= "[qcb-customer-confirm]\n";
+        $content .= "exten => s,1,NoOp(QCB: Customer callback confirm for callback \${CALLBACK_ID})\n";
+        $content .= " same => n,GotoIf(\$[\"\${CALLBACK_RETURN_MSG}\" != \"\"]?play_return)\n";
+        $content .= " same => n,Playback(custom/callback_returned)\n";
+        $content .= " same => n,Return()\n";
+        $content .= " same => n(play_return),Playback(\${CALLBACK_RETURN_MSG})\n";
+        $content .= " same => n,Return()\n\n";
+
+        // Callback completion handler - marks callbacks complete when calls end
+        $content .= "[qcb-complete]\n";
+        $content .= "exten => s,1,NoOp(QCB completing callback ID \${ARG1})\n";
+        $content .= " same => n,AGI(queuecallback-complete.agi,\${ARG1},completed)\n";
+        $content .= " same => n,Return()\n\n";
+
+        $tmp = '/tmp/extensions_custom_' . getmypid() . '.tmp';
+        file_put_contents($tmp, $content);
+        copy($tmp, $ecPath);
+        @unlink($tmp);
+        @chown($ecPath, 'asterisk'); @chgrp($ecPath, 'asterisk'); @chmod($ecPath, 0664);
+
+        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Generated handler contexts in $ecPath (Read n-option confirm)");
     }
 
     private function isValidKey($key): bool {
         return (is_string($key) && strlen($key) === 1 && preg_match('/^[0-9*#]$/', $key));
     }
 
-    /* -------------------------
-     * File generation
-     * -------------------------*/
-    private function generateQueuesPostCustom(array $configs): void {
-        $path = '/etc/asterisk/queues_post_custom.conf';
-        $existing = file_exists($path) ? file_get_contents($path) : '';
-        // Remove our previous block and any stray bare [queueid] sections we may have written
-        $existing = preg_replace('/\n?; BEGIN QCB AUTO[\s\S]*?; END QCB AUTO\n?/s', '', $existing);
-        // Also strip any bare [digits] sections (cleanup from previous broken writes)
-        $existing = preg_replace('/\n?\[\d+\][^\[]*(?=\n\[|\z)/s', '', $existing);
-
-        $buf = "\n; BEGIN QCB AUTO (generated ".date('Y-m-d H:i:s').")\n";
-        foreach ($configs as $c) {
-            $qid = $c['queue_id'];
-            $ann = $c['announce_file'] ?: '';
-            $freqSec = max(1, (int)($c['announce_frequency'] ?? 1)) * 60;
-
-            $buf .= "[$qid](+)\n";
-            $buf .= "context=queuecallback-$qid\n";
-            if ($ann !== '') {
-                $buf .= "periodic-announce=$ann\n";
-                $buf .= "periodic-announce-frequency=$freqSec\n";
-            }
-            $buf .= "\n";
-        }
-        $buf .= "; END QCB AUTO\n";
-
-        file_put_contents($path, rtrim($existing) . $buf . "\n");
-        @chown($path, 'asterisk'); @chgrp($path, 'asterisk'); @chmod($path, 0664);
-
-        freepbx_log(FPBX_LOG_INFO, "Queue Callback: wrote ".count($configs)." queue sections to queues_post_custom.conf");
-    }
-
-    private function generateExtensionsHandlers(array $configs): void {
-        $path = '/etc/asterisk/extensions_custom.conf';
-        $content = file_exists($path) ? file_get_contents($path) : '';
-
-        // Clear our per-queue contexts
-        foreach ($configs as $c) {
-            $qid = $c['queue_id'];
-            $content = preg_replace('/\n\[queuecallback-'.preg_quote($qid,'/').'\][\s\S]*?(?=\n\[|\z)/', '', $content);
-        }
-        // Clear our global contexts so we don't duplicate
-        $content = preg_replace('/\n\[queuecallback-outbound\][\s\S]*?(?=\n\[|\z)/', '', $content);
-        $content = preg_replace('/\n\[queuecallback-agent-outbound\][\s\S]*?(?=\n\[|\z)/', '', $content);
-
-        // Per-queue handler contexts
-        foreach ($configs as $c) {
-            $qid  = $c['queue_id'];
-            $ckey = $c['callback_key']; // already validated/defaulted
-            $confirmPrompt = 'custom/confirm_number'; // hardcoded
-
-            $ctx = "queuecallback-$qid";
-            $h  = "[$ctx]\n";
-            // When gosub is entered without a digit (s), just return to queue
-            $h .= "exten => s,1,Return()\n";
-
-            // Initiation key
-            $h .= "exten => $ckey,1,NoOp(QCB: queue $qid start key \"$ckey\" pressed by \${CALLERID(all)})\n";
-            $h .= " same => n,Set(CALLBACK_NUMBER=\${CALLERID(num)})\n";
-            $h .= " same => n,Set(CALLBACK_QUEUE=$qid)\n";
-            $h .= " same => n,AGI(queuecallback-check.agi,$qid)\n";
-            $h .= " same => n,GotoIf(\$[\"\${QUEUE_CALLBACK_ENABLED}\" = \"1\"]?confirm:unavail)\n";
-            $h .= " same => n(unavail),Playback(im-sorry)\n";
-            $h .= " same => n,Playback(goodbye)\n";
-            $h .= " same => n,Hangup()\n";
-
-            // Confirmation (keys 1/2)
-            $h .= " same => n(confirm),NoOp(QCB: confirm menu queue $qid)\n";
-            $h .= " same => n,SayDigits(\${CALLBACK_NUMBER})\n";
-            $h .= " same => n,Background($confirmPrompt)\n";
-            $h .= " same => n,Set(TIMEOUT(digit)=5)\n";
-            $h .= " same => n,Set(TIMEOUT(response)=10)\n";
-            $h .= " same => n,WaitExten(10)\n";
-
-            $h .= "exten => 1,1,NoOp(QCB: confirmed via 1)\n";
-            $h .= " same => n,Goto(queuecallback-$qid,store,1)\n";
-
-            $h .= "exten => 2,1,NoOp(QCB: confirmed via 2)\n";
-            $h .= " same => n,Goto(queuecallback-$qid,store,1)\n";
-
-            $h .= "exten => t,1,Playback(goodbye)\n";
-            $h .= " same => n,Hangup()\n";
-
-            $h .= "exten => i,1,Playback(vm-invalid)\n";
-            $h .= " same => n,WaitExten(5)\n";
-
-            // Store and finish
-            $h .= "exten => store,1,Set(QCB_CONFIRMED=1)\n";
-            $h .= " same => n,Set(QCB_CONFIRM_SOURCE=dtmf)\n";
-            $h .= " same => n,AGI(queuecallback-store.agi)\n";
-            $h .= " same => n,Set(CHANNEL(language)=en)\n";
-            $callbackStartedMsg = $c['callback_started_file'] ?: 'thank-you-for-calling';
-            $h .= " same => n,Playback($callbackStartedMsg)\n";
-            $h .= " same => n,Hangup()\n\n";
-
-            $content .= "\n".$h;
-        }
-
-        // Customer-first outbound leg: use __ vars + flags before Queue()
-        $out  = "[queuecallback-outbound]\n";
-        $out .= "exten => _X.,1,NoOp(QCB outbound: queue \${EXTEN} num \${CALLERID(num)})\n";
-        $out .= " same => n,Set(CHANNEL(language)=en)\n";
-        $out .= " same => n,Set(__CALLBACK_QUEUE_ID=\${EXTEN})\n";
-        $out .= " same => n,NoOp(QCB using queue: \${EXTEN})\n";
-        // CRITICAL flags so FreePBX 'from-queue' agent legs don't auto-hangup
-        $out .= " same => n,Set(__FROMQ=true)\n";
-        $out .= " same => n,Set(__NODEST=\${EXTEN})\n";
-        // optional return message
-        $out .= " same => n,ExecIf(\$[\"\${__CALLBACK_RETURN_MSG}\" != \"\"]?Playback(\${__CALLBACK_RETURN_MSG}))\n";
-        // enter the queue
-        $out .= " same => n,Queue(\${EXTEN},t,,,,,,)\n";
-        // mark completion only if truly answered
-        $out .= " same => n,NoOp(QCB Queue result: \${QUEUESTATUS})\n";
-        $out .= " same => n,GotoIf(\$[\"\${QUEUESTATUS}\" = \"COMPLETECALLER\" | \"\${QUEUESTATUS}\" = \"COMPLETEAGENT\"]?markdone:hang)\n";
-        $out .= " same => n(markdone),AGI(queuecallback-complete.agi)\n";
-        $out .= " same => n,Hangup()\n";
-        $out .= " same => n(hang),Hangup()\n\n";
-
-        // Agent-first helper (inherits the same flags)
-        $out .= "[queuecallback-agent-outbound]\n";
-        $out .= "exten => s,1,NoOp(QCB agent-first: dialing customer \${__CALLBACK_CUSTOMER_NUM})\n";
-        $out .= " same => n,Set(CHANNEL(language)=en)\n";
-        $out .= " same => n,Set(__FROMQ=true)\n";
-        $out .= " same => n,Set(__NODEST=\${__CALLBACK_QUEUE_ID})\n";
-        $out .= " same => n,Dial(Local/\${__CALLBACK_CUSTOMER_NUM}@from-internal,30,t)\n";
-        $out .= " same => n,Hangup()\n\n";
-
-        $content = rtrim($content)."\n\n".$out;
-
-        file_put_contents($path, $content);
-        @chown($path, 'asterisk'); @chgrp($path, 'asterisk'); @chmod($path, 0664);
-
-        freepbx_log(FPBX_LOG_INFO, "Queue Callback: generated ".count($configs)." handler contexts + outbound helpers in extensions_custom.conf");
-    }
-
     /**
-     * Critical: use VQ_GOSUB/QGOSUB so FreePBX passes our handler to Queue().
-     * We set both to cover framework variations, then jump back to -additional.
+     * CRITICAL: Modify QOPTIONS before FreePBX calls Queue(): strip 'H' and
+     * add G(<context>,s,1) so our handler context runs and DTMF flows to us.
+     * (Use single-quoted PHP strings to avoid escaping issues.)
      */
     private function generateExtensionsOverride(array $configs): void {
-        $path = '/etc/asterisk/extensions_override_freepbx.conf';
+        $overridePath = '/etc/asterisk/extensions_override_freepbx.conf';
+        
         $ov  = "; Auto-generated by Queue Callback module\n";
-        $ov .= "; Attach in-queue DTMF handler via VQ_GOSUB/QGOSUB so FreePBX passes it to Queue()\n";
+        $ov .= "; This file modifies queue options to enable callback features.\n";
         $ov .= "; Generated: " . date('Y-m-d H:i:s') . "\n\n";
         $ov .= "[from-internal]\n\n";
 
         foreach ($configs as $c) {
             $qid = $c['queue_id'];
-            $gosub = 'queuecallback-' . $qid . ',s,1';
+            $gosub_context = 'queuecallback-' . $qid;
 
             $ov .= "; --- Queue $qid Callback Override ---\n";
-            $ov .= "exten => $qid,1,Set(VQ_GOSUB=$gosub)\n";
-            $ov .= " same => n,Set(QGOSUB=$gosub)\n";
+            // Set QGOSUB to our handler for pre-connection DTMF check
+            $ov .= "exten => $qid,1,Set(__QGOSUB=$gosub_context,s,1)\n";
+            // This reports intended configuration, not confirmation of Queue() playback.
+            $announcement = str_replace(["\r", "\n", ',', '(', ')', '$', ';'], '_', (string) $c['announce_file']);
+            $frequency = self::announcementFrequencySeconds($c['announce_frequency'] ?? 0);
+            $ov .= " same => n,NoOp(QCB periodic announcement configured: queue=$qid file=$announcement interval=$frequency seconds language=\${CHANNEL(language)} channel=\${CHANNEL} uniqueid=\${UNIQUEID})\n";
             $ov .= " same => n,Goto(from-internal-additional,$qid,1)\n\n";
         }
 
-        file_put_contents($path, $ov);
-        @chown($path, 'asterisk'); @chgrp($path, 'asterisk'); @chmod($path, 0664);
+        $tmp = '/tmp/extensions_override_' . getmypid() . '.tmp';
+        file_put_contents($tmp, $ov);
+        copy($tmp, $overridePath);
+        @unlink($tmp);
+        @chown($overridePath, 'asterisk'); @chgrp($overridePath, 'asterisk'); @chmod($overridePath, 0664);
 
-        freepbx_log(FPBX_LOG_INFO, "Queue Callback: wrote VQ_GOSUB/QGOSUB override for ".count($configs)." queues");
+        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Wrote QOPTIONS overrides to extensions_override_freepbx.conf for " . count($configs) . " queues");
     }
 
     private function ensureQueuesIncludeOrder(): void {
@@ -491,130 +766,442 @@ class Qcallback extends FreePBX_Helpers implements BMO {
             return;
         }
         $content = file_get_contents($queuesConf);
-        // Remove duplicates
+        
+        // Remove any existing queues_post_custom.conf includes
         $content = preg_replace('/^\s*#include\s+queues_post_custom\.conf\s*$/mi', '', $content);
-        $content = rtrim($content)."\n#include queues_post_custom.conf\n";
+        
+        // Ensure it's the very last include
+        $content = rtrim($content) . "\n#include queues_post_custom.conf\n";
 
         $tmp = $queuesConf . '.tmp.' . getmypid();
         file_put_contents($tmp, $content);
         rename($tmp, $queuesConf);
-
-        $this->safeExec('asterisk -rx "module reload app_queue.so"');
+        
+        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Ensured queues_post_custom.conf is last in $queuesConf");
     }
 
-    /* -------------------------
-     * Cron management (asterisk user only)
-     * -------------------------*/
-    private function ensureCronIfQueues(): void {
+    /* ------------------------------------------------------------------
+     * ------------------------------------------------------------------*/
+    private function installDatabaseTables(): void {
         try {
-            $enabled = $this->countEnabledQueues();
-            if ($enabled < 1) { $this->removeCronIfNoQueues(); return; }
+            $tables = $this->db->query("SHOW TABLES LIKE 'queuecallback_config'")->fetchAll();
+            if (empty($tables)) {
+                $this->db->exec("DROP TABLE IF EXISTS queuecallback_requests");
+                $this->db->exec("DROP TABLE IF EXISTS queuecallback_config");
+                $this->db->exec("DROP TABLE IF EXISTS queuecallback_trigger");
 
-            $current = @shell_exec('crontab -u asterisk -l 2>/dev/null') ?: '';
-            $lines = array_filter(explode("\n", $current), function($l) {
-                return (strpos($l, 'intelligent_callback_processor.php') === false)
-                    && (strpos($l, '# BEGIN QCALLBACK') === false)
-                    && (strpos($l, '# END QCALLBACK') === false);
-            });
+                $this->db->exec("CREATE TABLE queuecallback_requests (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    queue_id VARCHAR(50) NOT NULL,
+                    caller_id VARCHAR(50) DEFAULT NULL,
+                    callback_number VARCHAR(50) NOT NULL,
+                    time_requested INT NOT NULL,
+                    time_processed INT DEFAULT NULL,
+                    status ENUM('pending','processing','completed','failed','cancelled') DEFAULT 'pending',
+                    attempts INT DEFAULT 0,
+                    max_attempts INT DEFAULT 3,
+                    last_attempt INT DEFAULT NULL,
+                    uniqueid VARCHAR(50) DEFAULT NULL,
+                    position INT DEFAULT NULL,
+                    INDEX idx_queue_status (queue_id, status),
+                    INDEX idx_time_requested (time_requested)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
 
-            $proc = '/var/www/html/admin/modules/qcallback/intelligent_callback_processor.php';
-            $block = [];
-            $block[] = '# BEGIN QCALLBACK';
-            $block[] = '# Queue Callback intelligent processor (every 15s, via PHP CLI)';
-            $block[] = "* * * * * /usr/bin/php -q $proc >> /var/log/asterisk/qcallback.log 2>&1";
-            $block[] = "* * * * * sleep 15; /usr/bin/php -q $proc >> /var/log/asterisk/qcallback.log 2>&1";
-            $block[] = "* * * * * sleep 30; /usr/bin/php -q $proc >> /var/log/asterisk/qcallback.log 2>&1";
-            $block[] = "* * * * * sleep 45; /usr/bin/php -q $proc >> /var/log/asterisk/qcallback.log 2>&1";
-            $block[] = '# END QCALLBACK';
+                $this->db->exec("CREATE TABLE queuecallback_config (
+                    queue_id VARCHAR(50) PRIMARY KEY,
+                    enabled TINYINT(1) DEFAULT 0,
+                    announce_id VARCHAR(100) DEFAULT NULL,
+                    announce_frequency INT DEFAULT 0,
+                    callback_key VARCHAR(10) DEFAULT '#',
+                    processing_interval INT DEFAULT 30,
+                    max_attempts INT DEFAULT 3,
+                    retry_interval INT DEFAULT 30,
+                    return_message_id VARCHAR(100) DEFAULT NULL,
+                    confirm_message_id VARCHAR(100) DEFAULT NULL,
+                    confirm_number TINYINT(1) DEFAULT 1,
+                    alt_number_key VARCHAR(10) DEFAULT '2',
+                    alt_message_id VARCHAR(100) DEFAULT NULL,
+                    initiated_message_id VARCHAR(100) DEFAULT NULL,
+                    confirm_prompt_id VARCHAR(100) DEFAULT NULL,
+                    call_first VARCHAR(10) DEFAULT 'customer',
+                    outbound_route_id INT DEFAULT 1
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
 
-            $new = rtrim(implode("\n", $lines)."\n\n".implode("\n", $block))."\n";
-            file_put_contents('/tmp/new_crontab_qcb', $new);
-            @shell_exec('crontab -u asterisk /tmp/new_crontab_qcb');
-            @unlink('/tmp/new_crontab_qcb');
+                $this->db->exec("CREATE TABLE queuecallback_trigger (
+                    id INT PRIMARY KEY DEFAULT 1,
+                    last_run INT NOT NULL,
+                    UNIQUE KEY unique_id (id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
 
-            // Detect (but do not edit) system-wide duplicates and warn
-            $dups = @shell_exec("grep -R --line-number 'intelligent_callback_processor.php' /etc/crontab /etc/cron.d 2>/dev/null");
-            if ($dups) {
-                freepbx_log(FPBX_LOG_WARNING, "Queue Callback: processor also referenced in system cron:\n".$dups);
+                freepbx_log(FPBX_LOG_INFO, 'Queue Callback: Created database tables');
+            } else {
+                // Upgrade: add missing columns
+                $cols = $this->db->query("SHOW COLUMNS FROM queuecallback_config")->fetchAll(PDO::FETCH_COLUMN);
+                $upgrades = [
+                    'announce_frequency'   => "ALTER TABLE queuecallback_config ADD COLUMN announce_frequency INT DEFAULT 0 AFTER announce_id",
+                    'call_first'           => "ALTER TABLE queuecallback_config ADD COLUMN call_first VARCHAR(10) DEFAULT 'customer' AFTER alt_number_key",
+                    'outbound_route_id'    => "ALTER TABLE queuecallback_config ADD COLUMN outbound_route_id INT DEFAULT 1 AFTER call_first",
+                    'alt_message_id'       => "ALTER TABLE queuecallback_config ADD COLUMN alt_message_id VARCHAR(100) DEFAULT NULL AFTER confirm_number",
+                    'initiated_message_id' => "ALTER TABLE queuecallback_config ADD COLUMN initiated_message_id VARCHAR(100) DEFAULT NULL AFTER alt_message_id",
+                    'confirm_prompt_id'    => "ALTER TABLE queuecallback_config ADD COLUMN confirm_prompt_id VARCHAR(100) DEFAULT NULL AFTER initiated_message_id",
+                ];
+                foreach ($upgrades as $col => $sql) {
+                    if (!in_array($col, $cols)) {
+                        $this->db->exec($sql);
+                        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Added column $col");
+                    }
+                }
             }
 
-            freepbx_log(FPBX_LOG_INFO, "Queue Callback: ensured asterisk-user cron (enabled queues: $enabled)");
+            // Ensure security table exists
+            $secTables = $this->db->query("SHOW TABLES LIKE 'queuecallback_security'")->fetchAll();
+            if (empty($secTables)) {
+                $this->db->exec("CREATE TABLE queuecallback_security (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    pattern VARCHAR(20) NOT NULL,
+                    description VARCHAR(100) NOT NULL,
+                    area_code VARCHAR(10) DEFAULT '',
+                    queue_id VARCHAR(20) DEFAULT '',
+                    enabled TINYINT(1) DEFAULT 1,
+                    sort_order INT DEFAULT 0,
+                    created_at INT DEFAULT NULL,
+                    updated_at INT DEFAULT NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+                freepbx_log(FPBX_LOG_INFO, 'Queue Callback: Created queuecallback_security table');
+            } else {
+                $secCols = $this->db->query("SHOW COLUMNS FROM queuecallback_security")->fetchAll(PDO::FETCH_COLUMN);
+                if (!in_array('queue_id', $secCols)) {
+                    $this->db->exec("ALTER TABLE queuecallback_security ADD COLUMN queue_id VARCHAR(20) DEFAULT '' AFTER area_code");
+                    freepbx_log(FPBX_LOG_INFO, 'Queue Callback: Added queue_id column to queuecallback_security');
+                }
+            }
         } catch (\Throwable $e) {
-            freepbx_log(FPBX_LOG_ERROR, "Queue Callback: cron ensure failed: ".$e->getMessage());
+            freepbx_log(FPBX_LOG_ERROR, 'Queue Callback: installDatabaseTables failed: ' . $e->getMessage());
         }
     }
 
-    private function removeCronIfNoQueues(bool $force = false): void {
+    private function setupCallbackEvents(): void {
         try {
-            if (!$force) {
-                $enabled = $this->countEnabledQueues();
-                if ($enabled > 0) { return; }
-            }
-            $current = @shell_exec('crontab -u asterisk -l 2>/dev/null') ?: '';
-            if ($current === '') { return; }
-            $lines = explode("\n", $current);
-            $filtered = array_filter($lines, function($l) {
-                return (strpos($l, 'intelligent_callback_processor.php') === false)
-                    && (strpos($l, '# BEGIN QCALLBACK') === false)
-                    && (strpos($l, '# END QCALLBACK') === false);
-            });
-            $new = rtrim(implode("\n", $filtered))."\n";
-            file_put_contents('/tmp/new_crontab_qcb', $new);
-            @shell_exec('crontab -u asterisk /tmp/new_crontab_qcb');
-            @unlink('/tmp/new_crontab_qcb');
+            $stmt = $this->db->prepare("SELECT MIN(processing_interval) AS min_interval FROM queuecallback_config WHERE enabled = 1");
+            $stmt->execute();
+            $res = $stmt->fetch(PDO::FETCH_ASSOC);
+            $interval = (int)($res['min_interval'] ?? 0);
 
-            freepbx_log(FPBX_LOG_INFO, "Queue Callback: removed asterisk-user callback cron (no enabled queues)");
+            $this->db->exec("DROP EVENT IF EXISTS queuecallback_processor");
+            $this->db->exec("DROP EVENT IF EXISTS queuecallback_trigger");
+
+            if ($interval > 0) {
+                $sql = "
+                CREATE EVENT queuecallback_trigger
+                ON SCHEDULE EVERY {$interval} MINUTE
+                STARTS CURRENT_TIMESTAMP
+                DO
+                BEGIN
+                    INSERT INTO queuecallback_trigger (last_run)
+                    VALUES (UNIX_TIMESTAMP())
+                    ON DUPLICATE KEY UPDATE last_run = UNIX_TIMESTAMP();
+
+                    UPDATE queuecallback_requests
+                    SET status='pending'
+                    WHERE status='processing'
+                      AND last_attempt < UNIX_TIMESTAMP() - 3600
+                      AND attempts < max_attempts;
+
+                    UPDATE queuecallback_requests
+                    SET status='failed'
+                    WHERE attempts >= max_attempts
+                      AND status IN ('pending','processing');
+                END";
+                $this->db->exec($sql);
+            }
         } catch (\Throwable $e) {
-            freepbx_log(FPBX_LOG_ERROR, "Queue Callback: cron remove failed: ".$e->getMessage());
+            error_log("Queue Callback: Failed to create database events: " . $e->getMessage());
         }
     }
 
-    private function countEnabledQueues(): int {
+    private function cleanupCallbackEvents(): void {
         try {
-            $st = $this->db->query("SELECT COUNT(*) c FROM queuecallback_config WHERE enabled = 1");
-            $c = $st->fetch(PDO::FETCH_ASSOC);
-            return (int)($c['c'] ?? 0);
-        } catch (\Throwable $e) { return 0; }
+            $this->db->exec("DROP EVENT IF EXISTS queuecallback_processor");
+            $this->db->exec("DROP EVENT IF EXISTS queuecallback_trigger");
+        } catch (\Throwable $e) {}
     }
 
-    /* -------------------------
-     * AGIs
-     * -------------------------*/
+    private function updateCronJob(): void {
+        try {
+            $stmt = $this->db->prepare("SELECT MIN(processing_interval) as min_interval FROM queuecallback_config WHERE enabled = 1");
+            $stmt->execute();
+            $res = $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (\Throwable $e) {
+            $res = ['min_interval' => 1];
+        }
+        $min = (int)($res['min_interval'] ?? 1);
+
+        $script = __DIR__ . '/process_callbacks.php';
+        $procScript = basename($script);
+        $min = (int)($res['min_interval'] ?? 1);
+
+        $line1 = "* * * * * /usr/bin/php $script >/dev/null 2>&1";
+        $line2 = "* * * * * sleep 15; /usr/bin/php $script >/dev/null 2>&1";
+        $line3 = "* * * * * sleep 30; /usr/bin/php $script >/dev/null 2>&1";
+        $line4 = "* * * * * sleep 45; /usr/bin/php $script >/dev/null 2>&1";
+
+        $current = @shell_exec('crontab -l 2>/dev/null') ?: '';
+        $lines = array_filter(explode("\n", $current), function($l) use ($procScript) {
+            return strpos($l, $procScript) === false
+                && strpos($l, 'intelligent_callback_processor.php') === false;
+        });
+        $new = implode("\n", $lines) . "\n" . $line1 . "\n" . $line2 . "\n" . $line3 . "\n" . $line4 . "\n";
+        file_put_contents('/tmp/new_crontab', $new);
+        $cronResult = @shell_exec('crontab /tmp/new_crontab 2>&1');
+        @unlink('/tmp/new_crontab');
+        if ($cronResult !== null) {
+            freepbx_log(FPBX_LOG_WARNING, "Queue Callback: crontab update returned: " . trim($cronResult));
+        }
+
+        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Updated cron job to run every 15 seconds");
+    }
+
+    private function ensureCronJobExists(): void {
+        $script = __DIR__ . '/process_callbacks.php';
+        $current = @shell_exec('crontab -l 2>/dev/null') ?: '';
+        if (strpos($current, 'process_callbacks.php') !== false
+            || strpos($current, 'intelligent_callback_processor.php') !== false) {
+            return;
+        }
+
+        $stmt = $this->db->prepare("SELECT MIN(processing_interval) as min_interval FROM queuecallback_config WHERE enabled = 1");
+        $stmt->execute();
+        $res = $stmt->fetch(PDO::FETCH_ASSOC);
+        $min = (int)($res['min_interval'] ?? 5);
+
+        $expr = ($min <= 1) ? "* * * * *" :
+                (($min <= 5) ? "*/5 * * * *" :
+                (($min <= 10) ? "*/10 * * * *" :
+                (($min <= 15) ? "*/15 * * * *" :
+                (($min <= 30) ? "*/30 * * * *" : "0 * * * *"))));
+
+        $line = "$expr /usr/bin/php $script >/dev/null 2>&1";
+        $new = trim($current) . "\n" . $line . "\n";
+
+        file_put_contents('/tmp/qcallback_cron', $new);
+        $cronResult = @shell_exec('crontab /tmp/qcallback_cron 2>&1');
+        @unlink('/tmp/qcallback_cron');
+        if ($cronResult !== null) {
+            freepbx_log(FPBX_LOG_WARNING, "Queue Callback: ensureCronJobExists crontab returned: " . trim($cronResult));
+        }
+
+        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Added missing cron job");
+    }
+
+    /* ------------------------------------------------------------------
+     * AGIs / Files
+     * ------------------------------------------------------------------*/
     private function installAgiScripts(): void {
-        $agi_scripts = ['queuecallback-store.agi', 'queuecallback-check.agi', 'queuecallback-complete.agi'];
+        $agi_scripts = ['queuecallback-store.agi', 'queuecallback-check.agi'];
         foreach ($agi_scripts as $s) {
             $src = __DIR__ . '/agi-bin/' . $s;
             $dst = '/var/lib/asterisk/agi-bin/' . $s;
             if (file_exists($src)) {
-                @copy($src, $dst);
-                @chmod($dst, 0755);
+                copy($src, $dst);
+                chmod($dst, 0755);
                 @chown($dst, 'asterisk'); @chgrp($dst, 'asterisk');
-                // Normalize line endings
                 $data = file_get_contents($dst);
-                if ($data !== false) {
-                    $data = str_replace("\r\n", "\n", $data);
-                    file_put_contents($dst, $data);
-                }
+                $data = str_replace("\r\n", "\n", $data);
+                file_put_contents($dst, $data);
             }
         }
     }
 
     private function uninstallAgiScripts(): void {
-        foreach (['queuecallback-store.agi','queuecallback-check.agi','queuecallback-complete.agi'] as $s) {
-            $p = '/var/lib/asterisk/agi-bin/' . $s;
-            if (file_exists($p)) { @unlink($p); }
+        foreach (['queuecallback-store.agi', 'queuecallback-check.agi'] as $s) {
+            $dst = '/var/lib/asterisk/agi-bin/' . $s;
+            if (file_exists($dst)) { @unlink($dst); }
         }
     }
 
-    /* -------------------------
-     * Misc UI helpers
-     * -------------------------*/
+    private function installCallbackDialplan(): void {
+        $custom_file = '/etc/asterisk/extensions_custom.conf';
+        $existing = file_exists($custom_file) ? file_get_contents($custom_file) : '';
+        $existing = preg_replace('/; Queue Callback Custom Dialplan.*?\n\n/s', '', $existing);
+        $existing = preg_replace('/\[queuecallback-handler-fixed\].*?\n\n/s', '', $existing);
+
+        $dp  = "\n; Queue Callback Custom Dialplan - Auto-generated by module\n";
+        $dp .= "[queuecallback-handler-fixed]\n";
+        $dp .= "exten => s,1,NoOp(Callback key \${ARG1} pressed by \${CALLERID(number)} in queue \${QUEUENAME})\n";
+        $dp .= "exten => s,n,Set(CALLBACK_NUMBER=\${CALLERID(number)})\n";
+        $dp .= "exten => s,n,Set(CALLBACK_QUEUE=\${QUEUENAME})\n";
+        $dp .= "exten => s,n,Set(CALLBACK_KEY=\${ARG1})\n";
+        $dp .= "exten => s,n,AGI(queuecallback-store.agi)\n";
+        $dp .= "exten => s,n,Playback(thank-you)\n";
+        $dp .= "exten => s,n,Playback(your-call-will-be-returned)\n";
+        $dp .= "exten => s,n,Hangup()\n\n";
+
+        file_put_contents($custom_file, $existing . $dp, LOCK_EX);
+        $this->reloadDialplan();
+    }
+
+    private function uninstallCallbackDialplan(): void {
+        $custom_file = '/etc/asterisk/extensions_custom.conf';
+        if (file_exists($custom_file)) {
+            $c = file_get_contents($custom_file);
+            $c = preg_replace('/; Queue Callback Custom Dialplan.*?\n\n/s', '', $c);
+            $c = preg_replace('/\[queuecallback-handler-fixed\].*?\n\n/s', '', $c);
+            $c = preg_replace('/\[from-internal-custom\].*?exten => \d+,.*?Hangup\(\)\n\n/s', '', $c);
+            file_put_contents($custom_file, $c, LOCK_EX);
+            $this->reloadDialplan();
+        }
+    }
+
+    private function installModuleFiles(): void {
+        $module_dir = __DIR__;
+        $dest_dir = '/var/www/html/admin/modules/qcallback';
+        // FreePBX normally invokes install() from the already installed module.
+        // Leave those files and their framework-managed permissions untouched.
+        if (realpath($module_dir) === realpath($dest_dir)) {
+            return;
+        }
+        if (!is_dir($dest_dir)) { mkdir($dest_dir, 0755, true); }
+
+        $files = [
+            'Qcallback.class.php',
+            'functions.inc.php',
+            'freepbx_menu.conf',
+            'hooks.php',
+            'install.php',
+            'intelligent_callback_processor.php',
+            'module.xml',
+            'page.qcallback.php',
+            'page.qcallback_reports.php',
+            'page.qcallback_security.php',
+            'page.qcallback_tab.php',
+            'process_callbacks.php',
+            'uninstall.php',
+        ];
+        foreach ($files as $f) {
+            $src = $module_dir . '/' . $f;
+            $dst = $dest_dir . '/' . $f;
+            if (file_exists($src)) {
+                copy($src, $dst);
+                chmod($dst, 0644);
+                @chown($dst, 'asterisk'); @chgrp($dst, 'asterisk');
+            }
+        }
+        foreach (['agi-bin','views'] as $d) {
+            $this->copyDirectory($module_dir . '/' . $d, $dest_dir . '/' . $d);
+        }
+    }
+
+    private function installMenuConfiguration(): void {
+        $src = __DIR__ . '/freepbx_menu.conf';
+        $dst = '/etc/asterisk/freepbx_menu.conf';
+        if (!is_readable($src)) {
+            return;
+        }
+
+        try {
+            $moduleConfig = file_get_contents($src);
+            $existing = is_readable($dst) ? file_get_contents($dst) : '';
+            $existing = preg_replace(
+                '/^\s*\[(?:qcallback|qcallback_reports|qcallback_security)\][^\[]*?(?=^\s*\[|\z)/mi',
+                '',
+                $existing
+            ) ?? '';
+            $content = trim($existing);
+            if ($content !== '') {
+                $content .= "\n\n";
+            }
+            $content .= trim($moduleConfig) . "\n";
+
+            if (!is_dir(dirname($dst))) {
+                mkdir(dirname($dst), 0755, true);
+            }
+            if (file_put_contents($dst, $content, LOCK_EX) === false) {
+                freepbx_log(FPBX_LOG_WARNING, 'Queue Callback: Could not write freepbx_menu.conf');
+                return;
+            }
+            @chown($dst, 'asterisk');
+            @chgrp($dst, 'asterisk');
+            @chmod($dst, 0664);
+        } catch (\Throwable $e) {
+            freepbx_log(FPBX_LOG_WARNING, 'Queue Callback: Could not install freepbx_menu.conf: ' . $e->getMessage());
+        }
+    }
+
+    private function uninstallMenuConfiguration(): void {
+        $dst = '/etc/asterisk/freepbx_menu.conf';
+        if (!is_readable($dst)) {
+            return;
+        }
+
+        try {
+            $content = file_get_contents($dst);
+            $content = preg_replace(
+                '/^\s*\[(?:qcallback|qcallback_reports|qcallback_security)\][^\[]*?(?=^\s*\[|\z)/mi',
+                '',
+                $content
+            ) ?? '';
+            $content = trim(preg_replace('/\n{3,}/', "\n\n", $content));
+            if ($content === '') {
+                @unlink($dst);
+                return;
+            }
+            file_put_contents($dst, $content . "\n", LOCK_EX);
+            @chown($dst, 'asterisk');
+            @chgrp($dst, 'asterisk');
+            @chmod($dst, 0664);
+        } catch (\Throwable $e) {
+            freepbx_log(FPBX_LOG_WARNING, 'Queue Callback: Could not remove freepbx_menu.conf entries: ' . $e->getMessage());
+        }
+    }
+
+    private function uninstallModuleFiles(): void {
+        $dest_dir = '/var/www/html/admin/modules/qcallback';
+        $this->removeDirectory($dest_dir);
+    }
+
+    private function copyDirectory($src, $dst): void {
+        if (!is_dir($src)) { return; }
+        // Includes symlink aliases of the same directory.
+        if (realpath($src) === realpath($dst)) { return; }
+        if (!is_dir($dst)) { mkdir($dst, 0755, true); }
+        $it = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($src, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+        foreach ($it as $item) {
+            $path = $dst . DIRECTORY_SEPARATOR . $it->getSubPathName();
+            if ($item->isDir()) {
+                if (!is_dir($path)) { mkdir($path, 0755, true); }
+            } else {
+                copy($item, $path);
+                chmod($path, 0644);
+                @chown($path, 'asterisk'); @chgrp($path, 'asterisk');
+            }
+        }
+    }
+
+    private function removeDirectory($dir): void {
+        if (!is_dir($dir)) { return; }
+        $it = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($it as $item) {
+            $item->isDir() ? @rmdir($item) : @unlink($item);
+        }
+        @rmdir($dir);
+    }
+
+    /* ------------------------------------------------------------------
+     * Misc API
+     * ------------------------------------------------------------------*/
     public function getCallbackEnabledQueues(): array {
         try {
-            $st = $this->db->prepare("SELECT qc.*, q.descr as queue_name
-                                      FROM queuecallback_config qc
-                                      LEFT JOIN queues_config q ON qc.queue_id COLLATE utf8_general_ci = q.extension COLLATE utf8_general_ci
-                                      WHERE qc.enabled = 1");
+            $sql = "SELECT qc.*, q.descr as queue_name
+                    FROM queuecallback_config qc
+                    LEFT JOIN queues_config q ON qc.queue_id COLLATE utf8_general_ci = q.extension COLLATE utf8_general_ci
+                    WHERE qc.enabled = 1";
+            $st = $this->db->prepare($sql);
             $st->execute();
             return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
         } catch (\Throwable $e) {
@@ -622,7 +1209,7 @@ class Qcallback extends FreePBX_Helpers implements BMO {
                 $st = $this->db->prepare("SELECT * FROM queuecallback_config WHERE enabled = 1");
                 $st->execute();
                 $res = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
-                foreach ($res as &$r) { $r['queue_name'] = 'Queue '.$r['queue_id']; }
+                foreach ($res as &$r) { $r['queue_name'] = "Queue " . $r['queue_id']; }
                 return $res;
             } catch (\Throwable $e2) { return []; }
         }
@@ -649,52 +1236,6 @@ class Qcallback extends FreePBX_Helpers implements BMO {
         ];
     }
 
-    /**
-     * Get pending callback requests for a specific queue
-     * @param string $queue_id The queue ID to get callbacks for (empty for all queues)
-     * @return array Array of callback records
-     */
-    public function getPendingCallbackRequests($queue_id = ''): array {
-        try {
-            if (empty($queue_id)) {
-                // Get all pending callbacks if no queue specified
-                $stmt = $this->db->prepare("SELECT * FROM queuecallback_requests WHERE status IN ('pending', 'processing') ORDER BY time_requested ASC");
-                $stmt->execute();
-            } else {
-                // Get callbacks for specific queue
-                $stmt = $this->db->prepare("SELECT * FROM queuecallback_requests WHERE queue_id = ? AND status IN ('pending', 'processing') ORDER BY time_requested ASC");
-                $stmt->execute([$queue_id]);
-            }
-            
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-        } catch (\Exception $e) {
-            error_log("getPendingCallbackRequests error: " . $e->getMessage());
-            return [];
-        }
-    }
-
-    /**
-     * Get all callback requests for a specific queue (including completed/failed)
-     * @param string $queue_id The queue ID to get callbacks for
-     * @param int $limit Maximum number of records to return
-     * @return array Array of callback records
-     */
-    public function getAllCallbackRequests($queue_id, $limit = 100): array {
-        try {
-            $stmt = $this->db->prepare("SELECT * FROM queuecallback_requests WHERE queue_id = ? ORDER BY time_requested DESC LIMIT ?");
-            $stmt->execute([$queue_id, $limit]);
-            
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-        } catch (\Exception $e) {
-            error_log("getAllCallbackRequests error: " . $e->getMessage());
-            return [];
-        }
-    }
-
-
-
     public function deleteQueueCallbackConfig($queue_id): bool {
         try {
             $this->db->exec("START TRANSACTION");
@@ -707,8 +1248,7 @@ class Qcallback extends FreePBX_Helpers implements BMO {
             $st->execute([time(), $queue_id]);
 
             $this->db->exec("COMMIT");
-            // Regenerate dialplan / cron decisions
-            $this->generateCallbackDialplan(true);
+            $this->setupCallbackEvents();
             $this->flagNeedReload();
             return true;
         } catch (\Throwable $e) {
@@ -732,11 +1272,230 @@ class Qcallback extends FreePBX_Helpers implements BMO {
                 $st->execute();
                 $res = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
                 foreach ($res as &$r) {
-                    $r['queue_name'] = 'Queue '.$r['queue_id'];
+                    $r['queue_name'] = "Queue " . $r['queue_id'];
                     $r['strategy']   = 'ringall';
                 }
                 return $res;
             } catch (\Throwable $e2) { return []; }
         }
+    }
+
+    public function getSecurityEntries(?string $queue_id = null): array {
+        try {
+            if ($queue_id !== null) {
+                $stmt = $this->db->prepare("SELECT * FROM queuecallback_security WHERE queue_id = ? ORDER BY sort_order ASC, id ASC");
+                $stmt->execute([$queue_id]);
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                if (!empty($rows)) {
+                    return $rows;
+                }
+                return $this->getGlobalSecurityEntries();
+            }
+            $stmt = $this->db->query("SELECT * FROM queuecallback_security ORDER BY sort_order ASC, id ASC");
+            return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    private function getGlobalSecurityEntries(): array {
+        try {
+            $stmt = $this->db->query("SELECT * FROM queuecallback_security WHERE queue_id = '' ORDER BY sort_order ASC, id ASC");
+            return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    public function getSecurityEntry(int $id): ?array {
+        try {
+            $stmt = $this->db->prepare("SELECT * FROM queuecallback_security WHERE id = ?");
+            $stmt->execute([$id]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            return $row ?: null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    public function addSecurityEntry(array $data): int {
+        $sql = "INSERT INTO queuecallback_security (pattern, description, area_code, queue_id, enabled, sort_order, created_at) VALUES (?,?,?,?,?,?,?)";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([
+            $data['pattern'] ?? '',
+            $data['description'] ?? '',
+            $data['area_code'] ?? '',
+            $data['queue_id'] ?? '',
+            isset($data['enabled']) ? (int)$data['enabled'] : 1,
+            (int)($data['sort_order'] ?? 0),
+            time()
+        ]);
+        $id = (int)$this->db->lastInsertId();
+        $this->flagNeedReload();
+        return $id;
+    }
+
+    public function updateSecurityEntry(int $id, array $data): bool {
+        $sql = "UPDATE queuecallback_security SET pattern=?, description=?, area_code=?, queue_id=?, enabled=?, sort_order=? WHERE id=?";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([
+            $data['pattern'] ?? '',
+            $data['description'] ?? '',
+            $data['area_code'] ?? '',
+            $data['queue_id'] ?? '',
+            isset($data['enabled']) ? (int)$data['enabled'] : 0,
+            (int)($data['sort_order'] ?? 0),
+            $id
+        ]);
+        $this->flagNeedReload();
+        return true;
+    }
+
+    public function deleteSecurityEntry(int $id): bool {
+        $stmt = $this->db->prepare("DELETE FROM queuecallback_security WHERE id = ?");
+        $stmt->execute([$id]);
+        $this->flagNeedReload();
+        return true;
+    }
+
+    public function toggleSecurityEntry(int $id, bool $enabled): bool {
+        $stmt = $this->db->prepare("UPDATE queuecallback_security SET enabled = ?, updated_at = ? WHERE id = ?");
+        $stmt->execute([(int)$enabled, time(), $id]);
+        return true;
+    }
+
+    public function getSecurityBlocklist(?string $queue_id = null): array {
+        try {
+            if ($queue_id !== null) {
+                $stmt = $this->db->prepare("SELECT pattern, description FROM queuecallback_security WHERE enabled = 1 AND (queue_id = ? OR queue_id = '') ORDER BY sort_order ASC");
+                $stmt->execute([$queue_id]);
+            } else {
+                $stmt = $this->db->query("SELECT pattern, description FROM queuecallback_security WHERE enabled = 1 ORDER BY sort_order ASC");
+            }
+            return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    public function generateSecurityDialplan(): string {
+        $entries = $this->getSecurityEntries();
+        $enabled = array_filter($entries, function($e) { return $e['enabled']; });
+        if (empty($enabled)) {
+            return '';
+        }
+        $buf = "; Auto-generated by Queue Callback - Security Blocklist\n";
+        $buf .= "[qcallback-security-block]\n";
+        foreach ($enabled as $e) {
+            $buf .= "exten => {$e['pattern']},1,Goto(app-blackhole,hangup,1)\n";
+        }
+        return $buf;
+    }
+
+    public function isNumberBlocked(string $number, ?string $queue_id = null): bool {
+        $number = preg_replace('/[^0-9]/', '', $number);
+        if (empty($number)) {
+            return false;
+        }
+        if ($queue_id !== null) {
+            $entries = $this->db->prepare("SELECT pattern, area_code FROM queuecallback_security WHERE enabled = 1 AND (queue_id = ? OR queue_id = '')");
+            $entries->execute([$queue_id]);
+        } else {
+            $entries = $this->db->query("SELECT pattern, area_code FROM queuecallback_security WHERE enabled = 1");
+        }
+        foreach ($entries as $entry) {
+            $ac = $entry['area_code'];
+            if (empty($ac)) {
+                continue;
+            }
+            if ($ac === 'NANP') {
+                if (preg_match('/^[2-9]\d{9}$/', $number)) {
+                    return true;
+                }
+                continue;
+            }
+            if (strpos($number, $ac) === 0) {
+                $acLen = strlen($ac);
+                if (strlen($number) >= $acLen) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Remove current and legacy security contexts, even if wrapper markers were lost. */
+    private function removeSecurityDialplanSections(string $content): string {
+        $content = preg_replace(
+            '/^[ \t]*\[qcallback-security-block\][^\r\n]*(?:\R|$)[\s\S]*?(?=^[ \t]*\[|\z)/mi',
+            '',
+            $content
+        );
+        // Remove only our own markers, including orphaned markers from old reloads.
+        return preg_replace(
+            '/^[ \t]*;(?: BEGIN QCB_SECURITY BLOCKLIST| END QCB_SECURITY BLOCKLIST| Auto-generated by Queue Callback - Security Blocklist)[^\r\n]*(?:\R|$)/mi',
+            '',
+            $content
+        );
+    }
+
+    public function generateSecurityDialplanFile(): void {
+        $ecPath = '/etc/asterisk/extensions_custom.conf';
+        $content = file_exists($ecPath) ? file_get_contents($ecPath) : '';
+
+        $buf = $this->generateSecurityDialplan();
+        $content = $this->removeSecurityDialplanSections($content);
+        if (empty($buf)) {
+            file_put_contents($ecPath, $content);
+            return;
+        }
+
+        $section = "\n; BEGIN QCB_SECURITY BLOCKLIST\n";
+        $section .= $buf;
+        $section .= "; END QCB_SECURITY BLOCKLIST\n";
+
+        $content = rtrim($content) . "\n" . $section;
+
+        $tmp = '/tmp/extensions_custom_' . getmypid() . '.tmp';
+        file_put_contents($tmp, $content);
+        copy($tmp, $ecPath);
+        @unlink($tmp);
+        @chown($ecPath, 'asterisk'); @chgrp($ecPath, 'asterisk'); @chmod($ecPath, 0664);
+
+        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Generated security blocklist dialplan");
+    }
+
+    public function cleanupOrphanedConfigs(): bool {
+        $st = $this->db->prepare("DELETE qc FROM queuecallback_config qc LEFT JOIN queues_config q ON qc.queue_id = q.extension WHERE q.extension IS NULL");
+        $ok = $st->execute();
+
+        $st = $this->db->prepare("UPDATE queuecallback_requests qr
+                                  LEFT JOIN queues_config q ON qr.queue_id = q.extension
+                                  SET qr.status='cancelled', qr.time_processed=?
+                                  WHERE q.extension IS NULL AND qr.status IN ('pending','processing')");
+        $st->execute([time()]);
+
+        return (bool)$ok;
+    }
+
+    public function getActionBar($request) {
+        $buttons = [];
+        if (($request['display'] ?? '') === 'queues' && !empty($request['extdisplay'])) {
+            $queue_id = $request['extdisplay'];
+            $buttons[] = [
+                'name'  => 'callback_manage',
+                'id'    => 'callback_manage',
+                'value' => _('Manage Callbacks'),
+                'href'  => '?display=qcallback&view=queue&queue_id=' . urlencode($queue_id),
+            ];
+        }
+        return $buttons;
+    }
+
+    /**
+     * Disabled: override handles the Gosub/G option injection reliably.
+     */
+    public function getQueueDialplanHook($queue_id) {
+        return [];
     }
 }

@@ -36,7 +36,7 @@ try {
         // announce_frequency
         $c = sql("SHOW COLUMNS FROM `queuecallback_config` LIKE 'announce_frequency'", "getAll");
         if (empty($c)) {
-            sql("ALTER TABLE `queuecallback_config` ADD COLUMN `announce_frequency` INT DEFAULT 1 AFTER `announce_id`");
+            sql("ALTER TABLE `queuecallback_config` ADD COLUMN `announce_frequency` INT DEFAULT 0 AFTER `announce_id`");
             out("Added column: announce_frequency");
         }
 
@@ -102,8 +102,8 @@ try {
             queue_id VARCHAR(50) PRIMARY KEY,
             enabled TINYINT(1) DEFAULT 0,
             announce_id VARCHAR(100) DEFAULT NULL,
-            announce_frequency INT DEFAULT 1,
-            callback_key VARCHAR(10) DEFAULT '*',
+            announce_frequency INT DEFAULT 0,
+            callback_key VARCHAR(10) DEFAULT '#',
             processing_interval INT DEFAULT 30,
             max_attempts INT DEFAULT 3,
             retry_interval INT DEFAULT 30,
@@ -307,7 +307,7 @@ if ($queue_id) {
         $config = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($config && $config["enabled"]) {
             agi_cmd("SET VARIABLE QUEUE_CALLBACK_ENABLED 1");
-            agi_cmd("SET VARIABLE QUEUE_CALLBACK_KEY " . ($config["callback_key"] ?: "*"));
+            agi_cmd("SET VARIABLE QUEUE_CALLBACK_KEY " . ($config["callback_key"] ?: "#"));
         } else {
             agi_cmd("SET VARIABLE QUEUE_CALLBACK_ENABLED 0");
         }
