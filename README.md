@@ -7,11 +7,20 @@ Callers can request a callback instead of waiting on hold. The processor only re
 
 ## Status
 
-🚧 **Version 17.0.4.5 Beta 4 — updated October 26, 2026**
+🚧 **Version 17.0.4.6 Beta 4 — updated October 31, 2026**
 
 Periodic callback announcements are working again and have been confirmed in a live test call, including for a caller waiting alone.
 
-Recent updates:
+Recent updates in **17.0.4.6 Beta 4**:
+
+- Force a reload of `queues.conf` after generating callback configuration. A live internal test confirmed announcement playback with the 30-second setting; playback began after 33 seconds because Asterisk checks between agent ringing attempts.
+- Replace the callback instruction recording in WAV, μ-law, and A-law formats.
+- Preserve configured sound paths and resolve return recording IDs before callback playback.
+- Customer-first callbacks play the return message and enter the queue after answer, without dialing the customer again. Completion handlers attach after customer answer in both callback modes.
+- Leave module files in place on Uninstall so FreePBX can manage removal and reinstallation.
+- Stop writing callback announcement intervals into the Queues module’s settings.
+
+Earlier updates:
 
 - Queue Callback Instruction defaults to **30 seconds**; the frequency menu displays seconds and saves the selected interval.
 - New callback configurations default to **# (pound)**. Existing saved keys and intervals are preserved. Match your instruction recording to the selected callback key.
@@ -54,7 +63,7 @@ This module will function on any FreePBX-based system, including:
 3. If yes → `.call` file spooled and the call is driven into:  
    - `queuecallback-outbound` (customer-first), or  
    - `queuecallback-agent-outbound` (agent-first)  
-4. On successful bridge, the request is marked completed.  
+4. After the customer answers, a hangup handler marks the request completed when that customer leg ends. This does not independently verify a successful agent bridge.
 
 ---
 
