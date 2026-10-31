@@ -348,7 +348,6 @@ exten => s,1,NoOp(QCB: Processing customer-first callback for queue ${CALLBACK_Q
 same => n,Set(CALLERID(name)=Queue Callback)
 same => n,Answer()
 same => n,Wait(1)
-same => n,Dial(Local/${CALLBACK_CUSTOMER_NUM}@from-internal,30,Ttr)
 same => n,GotoIf($["${CALLBACK_RETURN_MSG}" != ""]?custom_msg)
 same => n,Playback(custom/callback_returned)
 same => n,Goto(connect_queue)

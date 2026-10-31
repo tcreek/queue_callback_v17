@@ -99,6 +99,7 @@ $ready_callbacks = $filtered;
 $qcallback = FreePBX::Qcallback();
 foreach ($ready_callbacks as $callback) {
     $call_first = $callback['call_first'] ?? 'customer';
+    $callback['return_message_id'] = $qcallback->resolveReturnMessage($callback['return_message_id'] ?? null);
 
     // Security block check - skip blocked numbers
     if ($qcallback->isNumberBlocked($callback['callback_number'], $callback['queue_id'])) {
@@ -225,7 +226,6 @@ foreach ($ready_callbacks as $callback) {
     $call_file_content .= "SetVar: __CALLBACK_ID={$callback['id']}\n";
     $call_file_content .= "SetVar: __CALLBACK_QUEUE_ID={$callback['queue_id']}\n";
     $call_file_content .= "SetVar: __CALLBACK_RETURN_MSG={$callback['return_message_id']}\n";
-    $call_file_content .= "SetVar: CHANNEL(hangup_handler_push)=qcb-complete,s,1({$callback['id']})\n";
 
     $call_file = "/var/spool/asterisk/outgoing/queuecallback_{$callback['id']}.call";
 

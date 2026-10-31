@@ -101,7 +101,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         $this->uninstallAgiScripts();
         $this->uninstallCallbackDialplan();
         $this->uninstallMenuConfiguration();
-        $this->uninstallModuleFiles();
+        // FreePBX owns module files; keep them available after Uninstall.
     }
 
     public function backup() {
@@ -197,7 +197,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
 
         // FreePBX reloads Asterisk after all modules have generated their files.
         if ($reload) {
-            $this->safeExec('asterisk -rx "module reload app_queue.so"');
+            $this->safeExec('asterisk -rx "config reload queues.conf"');
             $this->reloadDialplan();
         }
     }
@@ -258,6 +258,9 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         if (empty($announce_id)) {
             return '';
         }
+        if (!ctype_digit((string)$announce_id)) {
+            return $this->normalizeSoundFile((string)$announce_id);
+        }
         try {
             $tables = $this->db->query("SHOW TABLES LIKE 'recordings_details'")->fetchAll();
             if (!empty($tables)) {
@@ -307,6 +310,10 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         } catch (\Throwable $e) {}
 
         return 'please-hold';
+    }
+
+    public function resolveReturnMessage($value): string {
+        return $this->resolveOrDefault($value, 'return_message_id');
     }
 
     private function normalizeSoundFile(string $filename): string {
@@ -548,14 +555,6 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         @unlink($tmp);
         @chown($qpcPath, 'asterisk'); @chgrp($qpcPath, 'asterisk'); @chmod($qpcPath, 0664);
 
-        foreach ($freqSecMap as $qid => $freqSec) {
-            try {
-                $this->db->prepare("REPLACE INTO queues_details (id, keyword, data, flags) VALUES (?, 'periodic-announce-frequency', ?, 0)")->execute([$qid, $freqSec]);
-            } catch (\Exception $e) {
-                freepbx_log(FPBX_LOG_WARNING, "Queue Callback: Could not update periodic-announce-frequency for $qid: " . $e->getMessage());
-            }
-        }
-
         freepbx_log(FPBX_LOG_INFO, "Queue Callback: Wrote " . count($configs) . " queue sections to $qpcPath");
     }
 
@@ -568,6 +567,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         $content = file_exists($ecPath) ? file_get_contents($ecPath) : '';
 
         // Remove our managed handler contexts & hangup handler
+        $content = preg_replace('/\n\[queuecallback-outbound\][\s\S]*?(?=\n\[|\n; BEGIN QCB_SECURITY BLOCKLIST|\z)/', '', $content);
         foreach ($configs as $c) {
             $qid = $c['queue_id'];
             $content = preg_replace('/\n\[queuecallback-' . preg_quote($qid, '/') . '\][\s\S]*?(?=\n\[|\n; BEGIN QCB_SECURITY BLOCKLIST|\z)/', '', $content);
@@ -682,6 +682,18 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             $content .= $handler;
         }
 
+
+        $content .= "\n[queuecallback-outbound]\n";
+        $content .= "exten => s,1,NoOp(QCB customer answered callback \${CALLBACK_ID})\n";
+        $content .= " same => n,Set(CHANNEL(hangup_handler_push)=qcb-complete,s,1(\${CALLBACK_ID}))\n";
+        $content .= " same => n,Wait(1)\n";
+        $content .= " same => n,GotoIf(\$[\"\${CALLBACK_RETURN_MSG}\" != \"\"]?play_return)\n";
+        $content .= " same => n,Playback(custom/callback_returned)\n";
+        $content .= " same => n,Goto(connect_queue)\n";
+        $content .= " same => n(play_return),Playback(\${CALLBACK_RETURN_MSG})\n";
+        $content .= " same => n(connect_queue),Set(__CALLBACK_RETURN=1)\n";
+        $content .= " same => n,Goto(ext-queues,\${CALLBACK_QUEUE_ID},1)\n\n";
+
         // Agent-first outbound callback context
         $content .= "\n[queuecallback-agent-outbound]\n";
         $content .= "exten => s,1,NoOp(QCB: Processing agent-first callback for queue \${CALLBACK_QUEUE_ID})\n";
@@ -698,6 +710,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         // Play Return Call Announcement then connect the call
         $content .= "[qcb-customer-confirm]\n";
         $content .= "exten => s,1,NoOp(QCB: Customer callback confirm for callback \${CALLBACK_ID})\n";
+        $content .= " same => n,Set(CHANNEL(hangup_handler_push)=qcb-complete,s,1(\${CALLBACK_ID}))\n";
         $content .= " same => n,GotoIf(\$[\"\${CALLBACK_RETURN_MSG}\" != \"\"]?play_return)\n";
         $content .= " same => n,Playback(custom/callback_returned)\n";
         $content .= " same => n,Return()\n";
