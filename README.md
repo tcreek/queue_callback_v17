@@ -36,7 +36,7 @@ Inspected reference-host versions:
 | Queues | 17.0.4 |
 | PHP | 8.2.35 |
 | MariaDB | 11.8.6 |
-| Operating system | Debian 13 |
+| Operating system | Debian 12 & 13 |
 
 These identify the environment used for the isolated checks, not a completed
 compatibility certification. Other versions and distributions, including
