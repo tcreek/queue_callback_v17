@@ -20,46 +20,42 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-/**
- * Queue Callback Completion AGI Script
- * Updates callback status when call completes
- */
-
-$stdin = fopen('php://stdin', 'r');
-$stdout = fopen('php://stdout', 'w');
-
-// Read initial AGI environment variables from Asterisk
-$agi_vars = array();
-while ($line = fgets($stdin)) {
-    $line = trim($line);
-    if ($line == '') break; // Empty line signals end of environment
-    
+/** Reports only the current attempt, with bridge evidence from Asterisk. */
+$env = [];
+while (($line = fgets(STDIN)) !== false) {
+    $line = rtrim($line);
+    if ($line === '') { break; }
     if (strpos($line, ':') !== false) {
-        list($key, $value) = explode(':', $line, 2);
-        $agi_vars[trim($key)] = trim($value);
+        [$key, $value] = explode(':', $line, 2);
+        $env[trim($key)] = trim($value);
     }
 }
-
-// Get arguments passed to AGI
-$callback_id = isset($agi_vars['agi_arg_1']) ? $agi_vars['agi_arg_1'] : '';
-$status = isset($agi_vars['agi_arg_2']) ? $agi_vars['agi_arg_2'] : 'completed';
-
+function qcb_agi_getvar(string $name): string {
+    fwrite(STDOUT, "GET VARIABLE $name\n");
+    fflush(STDOUT);
+    $reply = fgets(STDIN);
+    return $reply !== false && preg_match('/^200 result=1\s*\((.*)\)\s*$/', trim($reply), $m) ? $m[1] : '';
+}
+$id = $env['agi_arg_1'] ?? '';
+if (!ctype_digit($id)) { $id = qcb_agi_getvar('CALLBACK_ID'); }
+$attempt = $env['agi_arg_2'] ?? '';
+if (!ctype_digit($attempt)) { $attempt = qcb_agi_getvar('CALLBACK_ATTEMPT'); }
+$mode = $env['agi_arg_3'] ?? '';
+if (!in_array($mode, ['customer', 'agent'], true)) { $mode = qcb_agi_getvar('QCB_MODE'); }
+// Legacy handlers without an attempt number cannot overwrite current requests.
+if (!ctype_digit($id) || !ctype_digit($attempt) || (int)$attempt < 1) { exit(0); }
+$vars = [];
+foreach (['QCB_CUSTOMER_CONFIRMED', 'ANSWEREDTIME_MS', 'DIALSTATUS', 'QCB_PHASE', 'QUEUEWAIT_MS', 'QUEUESTATUS', 'ABANDONED'] as $name) {
+    $vars[$name] = qcb_agi_getvar($name);
+}
 try {
-    if (!empty($callback_id)) {
-        // Load FreePBX config for database credentials
-        require_once("/etc/freepbx.conf");
-        $pdo = new PDO("mysql:host=" . $amp_conf["AMPDBHOST"] . ";dbname=" . $amp_conf["AMPDBNAME"], $amp_conf["AMPDBUSER"], $amp_conf["AMPDBPASS"]);
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        
-        // Update callback status
-        $sql = "UPDATE queuecallback_requests SET status = ?, time_processed = ? WHERE id = ?";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([$status, time(), $callback_id]);
-        
-        // Log completion
-        error_log("Callback completed: ID $callback_id - Status: $status");
-    }
-    
-} catch (Exception $e) {
-    error_log("Callback completion error: " . $e->getMessage());
+    require_once('/etc/freepbx.conf');
+    require_once(($amp_conf['AMPWEBROOT'] ?? '/var/www/html') . '/admin/modules/qcallback/callback_lifecycle.php');
+    $connected = qcallback_was_connected($mode, $vars);
+    $reason = $connected ? 'BRIDGED' : ($vars['QUEUESTATUS'] ?: ($vars['DIALSTATUS'] ?: 'NO_BRIDGE'));
+    qcallback_finish_attempt(FreePBX::Database(), (int)$id, (int)$attempt, $connected, $reason);
+} catch (Throwable $e) {
+    // The archived call file lets the processor recover a missed result.
+    error_log('Queue Callback: result AGI failed type=' . get_class($e)
+        . ' code=' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string)$e->getCode()));
 }

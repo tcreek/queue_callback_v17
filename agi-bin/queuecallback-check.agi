@@ -20,69 +20,35 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-/**
- * Queue Callback Check AGI Script
- * Checks if callback is enabled for the queue
- */
-
-$stdin = fopen('php://stdin', 'r');
-$stdout = fopen('php://stdout', 'w');
-
-// Read initial AGI environment variables from Asterisk
-$agi_vars = array();
-while ($line = fgets($stdin)) {
-    $line = trim($line);
-    if ($line == '') break; // Empty line signals end of environment
-    
+/** Read callback settings through FreePBX and fail closed on any error. */
+$env = [];
+while (($line = fgets(STDIN)) !== false) {
+    $line = rtrim($line, "\r\n");
+    if ($line === '') { break; }
     if (strpos($line, ':') !== false) {
-        list($key, $value) = explode(':', $line, 2);
-        $agi_vars[trim($key)] = trim($value);
+        [$key, $value] = explode(':', $line, 2);
+        $env[trim($key)] = ltrim($value, ' ');
     }
 }
-
-function agi_request($cmd) {
-    global $stdin, $stdout;
-    fputs($stdout, "$cmd\n");
-    fflush($stdout);
-    return trim(fgets($stdin));
-}
-
+$library = dirname(__DIR__) . '/callback_requests.php';
+if (!is_file($library)) { $library = '/var/www/html/admin/modules/qcallback/callback_requests.php'; }
 try {
-    // Get queue ID from dialplan variable
-    $queue_result = agi_request("GET VARIABLE CALLBACK_QUEUE");
-    preg_match('/result=1 \(([^)]*)\)/', $queue_result, $queue_matches);
-    $queue_id = isset($queue_matches[1]) ? $queue_matches[1] : '';
-    
-    if (empty($queue_id)) {
-        // Try to get from environment or use default
-        $queue_id = $agi_vars['agi_dnid'] ?? '';
+    if (!is_file($library)) {
+        // Custom web roots are discovered through FreePBX configuration.
+        global $amp_conf;
+        ob_start(static function ($output) { return ''; });
+        try { require_once '/etc/freepbx.conf'; } finally { ob_end_clean(); }
+        $library = ($amp_conf['AMPWEBROOT'] ?? '/var/www/html') . '/admin/modules/qcallback/callback_requests.php';
     }
-    
-    if (!empty($queue_id)) {
-        // Load FreePBX config for database credentials
-        require_once("/etc/freepbx.conf");
-        $pdo = new PDO("mysql:host=" . $amp_conf["AMPDBHOST"] . ";dbname=" . $amp_conf["AMPDBNAME"], $amp_conf["AMPDBUSER"], $amp_conf["AMPDBPASS"]);
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        
-        $sql = "SELECT enabled, callback_key FROM queuecallback_config WHERE queue_id = ?";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([$queue_id]);
-        $config = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($config && $config['enabled']) {
-            agi_request("SET VARIABLE QUEUE_CALLBACK_ENABLED 1");
-            agi_request("SET VARIABLE QUEUE_CALLBACK_KEY " . ($config['callback_key'] ?: "#"));
-            agi_request("VERBOSE \"Queue $queue_id has callback enabled with key " . ($config['callback_key'] ?: "#") . "\"");
-        } else {
-            agi_request("SET VARIABLE QUEUE_CALLBACK_ENABLED 0");
-            agi_request("VERBOSE \"Queue $queue_id callback is disabled\"");
+    require_once $library;
+    qcallback_check_agi($env, function (string $command): string {
+        if (fwrite(STDOUT, $command . "\n") === false || !fflush(STDOUT)) {
+            throw new RuntimeException('AGI output closed');
         }
-    } else {
-        agi_request("SET VARIABLE QUEUE_CALLBACK_ENABLED 0");
-        agi_request("VERBOSE \"No queue ID found for callback check\"");
-    }
-    
-} catch (Exception $e) {
-    agi_request("VERBOSE \"Error checking callback config: " . $e->getMessage() . "\"");
-    agi_request("SET VARIABLE QUEUE_CALLBACK_ENABLED 0");
+        $reply = fgets(STDIN);
+        if ($reply === false || rtrim($reply) === 'HANGUP') { throw new RuntimeException('AGI channel closed'); }
+        return rtrim($reply, "\r\n");
+    }, 'qcallback_agi_database');
+} catch (Throwable $e) {
+    error_log('Queue Callback: check AGI could not initialize');
 }

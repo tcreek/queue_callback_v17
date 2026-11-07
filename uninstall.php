@@ -26,6 +26,8 @@ out("Queue Callback module uninstallation started");
  * 1) DATABASE: drop ONLY our tables
  * -------------------------------------------------------------------*/
 try {
+    sql("DROP EVENT IF EXISTS queuecallback_processor");
+    sql("DROP EVENT IF EXISTS queuecallback_trigger");
     sql("DROP TABLE IF EXISTS queuecallback_requests");
     sql("DROP TABLE IF EXISTS queuecallback_config");
     sql("DROP TABLE IF EXISTS queuecallback_security");
@@ -79,7 +81,9 @@ try {
             '/\n\[queuecallback-customer-announce\][\s\S]*?(?=\n\[|\z)/i',
             '/\n\[queuecallback-customer-confirm2\][\s\S]*?(?=\n\[|\z)/i',
             '/\n\[queuecallback-agent-outbound\][\s\S]*?(?=\n\[|\z)/i',
+            '/\n\[qcb-route-[0-9]+\][\s\S]*?(?=\n\[|\z)/i',
             // defensive: older handler contexts
+            '/\n\[qcb-complete\][\s\S]*?(?=\n\[|\z)/i',
             '/\n\[qcb-hangup\][\s\S]*?(?=\n\[|\z)/i',
             '/\n\[queuecallback-[^\]]+\][\s\S]*?(?=\n\[|\z)/i',
         ];
@@ -112,7 +116,8 @@ try {
     $agi = [
         '/var/lib/asterisk/agi-bin/queuecallback-store.agi',
         '/var/lib/asterisk/agi-bin/queuecallback-check.agi',
-        '/var/lib/asterisk/agi-bin/queuecallback-complete.agi'
+        '/var/lib/asterisk/agi-bin/queuecallback-complete.agi',
+        '/var/lib/asterisk/agi-bin/queuecallback-result.agi'
     ];
     foreach ($agi as $f) {
         if (file_exists($f)) {

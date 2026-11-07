@@ -78,6 +78,8 @@ $initiated_message_id = $callback_config['initiated_message_id'] ?? '';
 $confirm_prompt_id = $callback_config['confirm_prompt_id'] ?? '';
 ?>
 
+<?php require_once __DIR__ . '/views/callback_form_style.php'; ?>
+
 <div class="container-fluid">
     <h3>Queue Callback Configuration for Queue <?php echo htmlspecialchars($queue_id); ?></h3>
     
@@ -90,11 +92,11 @@ $confirm_prompt_id = $callback_config['confirm_prompt_id'] ?? '';
         
         <div class="section" data-id="callback_basic">
             
-            <div class="form-group">
-                <div class="col-md-3">
+            <div class="form-group qcb-field-row">
+                <div class="col-md-3 qcb-field-label">
                     <label class="control-label" for="callback_enabled">Enable Callback <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_enabled"></i></label>
                 </div>
-                <div class="col-md-9">
+                <div class="col-md-9 qcb-field-control">
                     <span class="radioset">
                         <input type="radio" name="callback_enabled" id="callback_enabled_yes" value="1" <?php echo $enabled ? 'checked' : ''; ?>>
                         <label for="callback_enabled_yes">Yes</label>
@@ -107,11 +109,11 @@ $confirm_prompt_id = $callback_config['confirm_prompt_id'] ?? '';
                 Enable callback functionality for this queue. When enabled, callers can press the callback key to request a callback instead of waiting.
             </div>
             
-            <div class="form-group">
-                <div class="col-md-3">
+            <div class="form-group qcb-field-row">
+                <div class="col-md-3 qcb-field-label">
                     <label class="control-label" for="callback_key">Callback Key <i class="fa fa-question-circle fpbx-help-icon" data-for="callback_key"></i></label>
                 </div>
-                <div class="col-md-9">
+                <div class="col-md-9 qcb-field-control">
                     <input type="text" class="form-control" id="callback_key" name="callback_key" value="<?php echo htmlspecialchars($callback_key); ?>" maxlength="1">
                 </div>
             </div>
@@ -119,11 +121,11 @@ $confirm_prompt_id = $callback_config['confirm_prompt_id'] ?? '';
                 The key callers press to request a callback (default: #, pound). Must be a single digit, * (star), or # (pound). Choose a key not used by the Breakout IVR and match it in your callback instruction recording.
             </div>
             
-            <div class="form-group">
-                <div class="col-md-3">
+            <div class="form-group qcb-field-row">
+                <div class="col-md-3 qcb-field-label">
                     <label class="control-label" for="processing_interval">Processing Interval <i class="fa fa-question-circle fpbx-help-icon" data-for="processing_interval"></i></label>
                 </div>
-                <div class="col-md-9">
+                <div class="col-md-9 qcb-field-control">
                     <input type="number" class="form-control" id="processing_interval" name="processing_interval" value="<?php echo $processing_interval; ?>" min="1" max="60">
                 </div>
             </div>
@@ -140,11 +142,11 @@ $confirm_prompt_id = $callback_config['confirm_prompt_id'] ?? '';
         
         <div class="section" data-id="callback_messages">
             
-            <div class="form-group">
-                <div class="col-md-3">
+            <div class="form-group qcb-field-row">
+                <div class="col-md-3 qcb-field-label">
                     <label class="control-label" for="announce_id">Callback Announcement <i class="fa fa-question-circle fpbx-help-icon" data-for="announce_id"></i></label>
                 </div>
-                <div class="col-md-9">
+                <div class="col-md-9 qcb-field-control">
                     <input type="text" class="form-control" id="announce_id" name="announce_id" value="<?php echo htmlspecialchars($announce_id); ?>">
                 </div>
             </div>
@@ -152,23 +154,23 @@ $confirm_prompt_id = $callback_config['confirm_prompt_id'] ?? '';
                 Optional custom announcement to play before offering callback option (e.g., "custom/callback-intro").
             </div>
             
-            <div class="form-group">
-                <div class="col-md-3">
-                    <label class="control-label" for="return_message_id">Return Message <i class="fa fa-question-circle fpbx-help-icon" data-for="return_message_id"></i></label>
+            <div class="form-group qcb-field-row">
+                <div class="col-md-3 qcb-field-label">
+                    <label class="control-label" for="return_message_id">Return Call Announcement - Confirmation <i class="fa fa-question-circle fpbx-help-icon" data-for="return_message_id"></i></label>
                 </div>
-                <div class="col-md-9">
+                <div class="col-md-9 qcb-field-control">
                     <input type="text" class="form-control" id="return_message_id" name="return_message_id" value="<?php echo htmlspecialchars($return_message_id); ?>">
                 </div>
             </div>
             <div class="help-block" id="return_message_id-help">
-                Optional custom message to play when calling back (e.g., "custom/callback-return").
+                Announces the return call and asks the caller to press 1 to connect. This prevents voicemail from counting as a completed callback. No confirmation or a hangup before connecting follows the configured retry settings. Default: custom/callback-return-confirm.
             </div>
             
-            <div class="form-group">
-                <div class="col-md-3">
+            <div class="form-group qcb-field-row">
+                <div class="col-md-3 qcb-field-label">
                     <label class="control-label" for="alt_message_id">Alternate Number Instruction <i class="fa fa-question-circle fpbx-help-icon" data-for="alt_message_id"></i></label>
                 </div>
-                <div class="col-md-9">
+                <div class="col-md-9 qcb-field-control">
                     <input type="text" class="form-control" id="alt_message_id" name="alt_message_id" value="<?php echo htmlspecialchars($alt_message_id); ?>">
                 </div>
             </div>
@@ -176,11 +178,11 @@ $confirm_prompt_id = $callback_config['confirm_prompt_id'] ?? '';
                 Optional announcement played when caller presses the alternate number key (e.g., "custom/enter-alt-number").
             </div>
             
-            <div class="form-group">
-                <div class="col-md-3">
+            <div class="form-group qcb-field-row">
+                <div class="col-md-3 qcb-field-label">
                     <label class="control-label" for="initiated_message_id">Callback Initiated Announcement <i class="fa fa-question-circle fpbx-help-icon" data-for="initiated_message_id"></i></label>
                 </div>
-                <div class="col-md-9">
+                <div class="col-md-9 qcb-field-control">
                     <input type="text" class="form-control" id="initiated_message_id" name="initiated_message_id" value="<?php echo htmlspecialchars($initiated_message_id); ?>">
                 </div>
             </div>
@@ -188,11 +190,11 @@ $confirm_prompt_id = $callback_config['confirm_prompt_id'] ?? '';
                 Optional announcement played after callback is successfully scheduled (e.g., "custom/callback_initiated").
             </div>
             
-            <div class="form-group">
-                <div class="col-md-3">
+            <div class="form-group qcb-field-row">
+                <div class="col-md-3 qcb-field-label">
                     <label class="control-label" for="confirm_prompt_id">Callback Confirm Prompt <i class="fa fa-question-circle fpbx-help-icon" data-for="confirm_prompt_id"></i></label>
                 </div>
-                <div class="col-md-9">
+                <div class="col-md-9 qcb-field-control">
                     <input type="text" class="form-control" id="confirm_prompt_id" name="confirm_prompt_id" value="<?php echo htmlspecialchars($confirm_prompt_id); ?>">
                 </div>
             </div>

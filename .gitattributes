@@ -1,0 +1,4 @@
+*.wav binary
+*.ulaw binary
+*.alaw binary
+*.tgz binary

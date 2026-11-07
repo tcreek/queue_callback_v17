@@ -2,7 +2,7 @@
 <module>
   <rawname>qcallback</rawname>
   <name>Queue Callback</name>
-  <version>17.0.4.6 Beta 4</version>
+  <version>17.0.5.0 Beta 5</version>
   <publisher>Community</publisher>
   <license>GPLv3+</license>
   <licenselink>https://www.gnu.org/licenses/gpl-3.0.html</licenselink>
@@ -17,8 +17,9 @@
   <description>
     Provides queue callback functionality with intelligent processing.
   </description>
-  <more-info>https://example.com/</more-info>
+  <more-info>https://github.com/tcreek/queue_callback_v17/</more-info>
   <changelog>
+    * 17.0.5.0 Beta 5 - Add returned-call press-1 confirmation, configurable timeout and repeats, invalid-choice prompts and agent failure feedback; install new WAV, mu-law and A-law recordings; fix interrupted initial callback confirmation while preserving its on/off setting; default retries to one minute; improve form labels; harden dispatch, queue ordering/readiness, retries, routes, validation, blocklists, credentials and installation. Beta release; full stable-release verification remains pending.
     * 17.0.4.6 Beta 4 - Force queue configuration reload for periodic announcements; preserve sound paths and resolve return recordings; fix customer-first callback routing and attach completion after customer answer; leave module files to FreePBX on uninstall; replace callback instruction WAV, mu-law and A-law audio; stop overwriting Queues announcement intervals
     * 17.0.4.5 Beta 4 - Fixed periodic callback instruction generation on Apply Config and playback for the first waiting caller; added a 30-second default interval and saved frequency selection; preserved Queues breakout IVR routing with callback-key priority; changed the default callback key to # (pound); updated help text, key-conflict warnings, and announcement diagnostics; fixed duplicate security blocklist contexts on repeated configuration generation
     * 17.0.4.3 Beta 4 - Removed Security from FreePBX top-level menu; security is a tab within queue callback configuration only
@@ -38,6 +39,9 @@
     * 17.0.1 Initial Beta release
   </changelog>
   <files>
+    <file>README.md</file>
+    <file>RELEASE_NOTES.md</file>
+    <file>LICENSE</file>
     <file>Qcallback.class.php</file>
     <file>functions.inc.php</file>
     <file>freepbx_menu.conf</file>
@@ -49,11 +53,21 @@
     <file>hooks.php</file>
     <file>page.qcallback_tab.php</file>
     <file>process_callbacks.php</file>
+    <file>callback_spool.php</file>
+    <file>callback_lifecycle.php</file>
+    <file>callback_dialplan.php</file>
+    <file>callback_settings.php</file>
+    <file>callback_requests.php</file>
+    <file>callback_queue.php</file>
+    <file>callback_dispatch.php</file>
+    <file>callback_security.php</file>
+    <file>callback_install.php</file>
     <file>intelligent_callback_processor.php</file>
     <file>agi-bin/queuecallback-store.agi</file>
     <file>agi-bin/queuecallback-check.agi</file>
     <file>agi-bin/queuecallback-complete.agi</file>
     <file>agi-bin/queuecallback-result.agi</file>
+    <file>views/callback_form_style.php</file>
     <file>views/callback_config.php</file>
     <file>views/callback_config_standalone.php</file>
     <file>views/callback_overview.php</file>

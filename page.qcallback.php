@@ -86,81 +86,52 @@ if (isset($_REQUEST['action'])) {
             break;
             
         case 'add_request':
-            // Handle callback request from dialplan
-            $callback_number = $_REQUEST['callback_number'] ?? '';
-            $caller_id = $_REQUEST['caller_id'] ?? '';
-            $caller_name = $_REQUEST['caller_name'] ?? '';
-            $uniqueid = $_REQUEST['uniqueid'] ?? '';
-            
-            if ($queue_id && $callback_number) {
-                try {
-                    // Clean up callback number
-                    $callback_number = preg_replace('/[^0-9]/', '', $callback_number);
-                    
-                    if (strlen($callback_number) < 7) {
-                        throw new Exception("Invalid callback number");
-                    }
-                    
-                    // Check if callback is enabled for this queue
-                    $callback_config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
-                    
-                    if (empty($callback_config['enabled'])) {
-                        throw new Exception("Callback not enabled for queue $queue_id");
-                    }
-                    
-                    // Insert callback request
-                    $db = FreePBX::Database();
-                    $sql = "INSERT INTO queuecallback_requests 
-                            (queue_id, caller_id, callback_number, status, time_requested, uniqueid, position) 
-                            VALUES (?, ?, ?, 'pending', ?, ?, ?)";
-                    
-                    $stmt = $db->prepare($sql);
-                    $stmt->execute(array(
-                        $queue_id,
-                        $caller_name . ' <' . $caller_id . '>',
-                        $callback_number,
-                        time(),
-                        $uniqueid,
-                        0
-                    ));
-                    
-                    $callback_id = $db->lastInsertId();
-                    
-                    // Log the callback request
-                    freepbx_log(FPBX_LOG_INFO, "Queue Callback: Request $callback_id created for queue $queue_id, number $callback_number");
-                    
-                    echo "SUCCESS: Callback request created with ID $callback_id";
-                    exit;
-                    
-                } catch (Exception $e) {
-                    freepbx_log(FPBX_LOG_ERROR, "Queue Callback: Failed to create request: " . $e->getMessage());
-                    echo "ERROR: " . $e->getMessage();
-                    exit;
-                }
+            // Share validation and the atomic enabled-queue insert with the AGI.
+            require_once(__DIR__ . '/callback_requests.php');
+            $result = qcallback_create_request(FreePBX::Database(), [
+                'queue_id' => $queue_id,
+                'callback_number' => $_REQUEST['callback_number'] ?? null,
+                'caller_id' => $_REQUEST['caller_id'] ?? '',
+                'caller_name' => $_REQUEST['caller_name'] ?? '',
+                'uniqueid' => $_REQUEST['uniqueid'] ?? '',
+            ]);
+            header('Content-Type: text/plain; charset=utf-8');
+            if ($result['success']) {
+                echo "SUCCESS: Callback request created with ID " . $result['id'];
+            } else {
+                http_response_code($result['error'] === 'DB_ERROR' ? 503 : 400);
+                echo "ERROR: Unable to store callback request (" . $result['error'] . ")";
             }
-            break;
-            
+            exit;
+
         case 'save_config':
             // Handle configuration save from standalone config page
             if ($queue_id) {
                 try {
+                    $retry_minutes = filter_var($_REQUEST['callback_retry_minutes'] ?? 1,
+                        FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 120]]);
+                    if ($retry_minutes === false) {
+                        throw new \InvalidArgumentException('Retry interval must be between 1 and 120 minutes.');
+                    }
                     $new_config = array(
                         'enabled' => $_REQUEST['callback_enabled'] ?? 0,
                         'announce_id' => $_REQUEST['callback_announce_id'] ?: null,
                         'announce_frequency' => max(0, min(15, (int)($_REQUEST['callback_announce_frequency'] ?? 0))),
-                        'callback_key' => $_REQUEST['callback_key'] ?: '#',
+                        'callback_key' => $_REQUEST['callback_key'] ?? '#',
                         'processing_interval' => (int)($_REQUEST['callback_processing_interval'] ?: 30),
                         'max_attempts' => (int)($_REQUEST['callback_max_attempts'] ?: 3),
-                        'retry_interval' => (int)($_REQUEST['callback_retry_interval'] ?: 5),
+                        'retry_interval' => $retry_minutes * 60,
                         'return_message_id' => $_REQUEST['callback_return_message_id'] ?: null,
+                        'return_confirm_timeout' => $_REQUEST['callback_return_confirm_timeout'] ?? 10,
+                        'return_confirm_repeats' => $_REQUEST['callback_return_confirm_repeats'] ?? 1,
                         'confirm_message_id' => $_REQUEST['callback_confirm_message_id'] ?: null,
                         'confirm_number' => $_REQUEST['callback_confirm_number'] ?? 1,
-                        'alt_number_key' => $_REQUEST['callback_alt_number_key'] ?: '2',
+                        'alt_number_key' => $_REQUEST['callback_alt_number_key'] ?? '2',
                         'alt_message_id' => $_REQUEST['callback_alt_message_id'] ?: null,
                         'initiated_message_id' => $_REQUEST['callback_initiated_message_id'] ?: null,
                         'confirm_prompt_id' => $_REQUEST['callback_confirm_prompt_id'] ?: null,
                         'call_first' => $_REQUEST['callback_call_first'] ?: 'customer',
-                        'outbound_route_id' => isset($_REQUEST['callback_outbound_route_id']) ? (int)$_REQUEST['callback_outbound_route_id'] : 1
+                        'outbound_route_id' => $_REQUEST['callback_outbound_route_id'] ?? 0
                     );
                     
                     FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $new_config);

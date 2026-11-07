@@ -15,10 +15,8 @@ switch ($action) {
         $queue_id = trim($_POST['queue_id'] ?? '');
         $enabled = isset($_POST['enabled']) ? 1 : 0;
         $sort_order = (int)($_POST['sort_order'] ?? 0);
-        if (empty($pattern) || empty($description)) {
+        if ($pattern === '' || $description === '') {
             $error = _('Pattern and Description are required');
-        } elseif (empty($queue_id)) {
-            $error = _('Queue is required - entries are per-queue');
         } else {
             try {
                 $qcallback->addSecurityEntry([
@@ -43,7 +41,7 @@ switch ($action) {
         $area_code = trim($_POST['area_code'] ?? '');
         $enabled = isset($_POST['enabled']) ? 1 : 0;
         $sort_order = (int)($_POST['sort_order'] ?? 0);
-        if (empty($pattern) || empty($description)) {
+        if ($pattern === '' || $description === '') {
             $error = _('Pattern and Description are required');
         } else {
             try {
@@ -128,7 +126,8 @@ $heading = _('Security - Toll Fraud Prevention');
                                         <th><?php echo _('ID') ?></th>
                                         <th><?php echo _('Description') ?></th>
                                         <th><?php echo _('Pattern') ?></th>
-                                        <th><?php echo _('Area Code') ?></th>
+                                        <th><?php echo _('Area Code (label)') ?></th>
+                                        <th><?php echo _('Scope') ?></th>
                                         <th><?php echo _('Enabled') ?></th>
                                         <th><?php echo _('Actions') ?></th>
                                     </tr>
@@ -140,6 +139,7 @@ $heading = _('Security - Toll Fraud Prevention');
                                             <td><?php echo htmlentities($entry['description']) ?></td>
                                             <td><code><?php echo htmlentities($entry['pattern']) ?></code></td>
                                             <td><?php echo htmlentities($entry['area_code']) ?></td>
+                                            <td><?php echo $entry['queue_id'] === '' ? _('Global') : _('Queue') . ' ' . htmlentities($entry['queue_id']) ?></td>
                                             <td>
                                                 <form method="post" style="display:inline">
                                                     <input type="hidden" name="action" value="toggle_entry">
@@ -184,8 +184,8 @@ $heading = _('Security - Toll Fraud Prevention');
                         <input type="hidden" name="action" value="add_entry">
                         <div class="form-group">
                             <label for="queue_id"><?php echo _('Queue') ?></label>
-                            <select name="queue_id" id="queue_id" class="form-control" required>
-                                <option value=""><?php echo _('Select Queue') ?></option>
+                            <select name="queue_id" id="queue_id" class="form-control">
+                                <option value=""><?php echo _('Global (all queues)') ?></option>
                                 <?php foreach ($queues as $qid => $qname): ?>
                                     <option value="<?php echo htmlentities($qid) ?>"><?php echo htmlentities($qname) ?></option>
                                 <?php endforeach; ?>
@@ -193,8 +193,8 @@ $heading = _('Security - Toll Fraud Prevention');
                         </div>
                         <div class="form-group">
                             <label for="pattern"><?php echo _('Asterisk Pattern') ?></label>
-                            <input type="text" class="form-control" name="pattern" id="pattern" placeholder="_268NXXXXXX" required>
-                            <p class="help-block"><?php echo _('Example: _268NXXXXXX matches any 10-digit number starting with 268. N=2-9, X=0-9.') ?></p>
+                            <input type="text" class="form-control" name="pattern" id="pattern" maxlength="20" placeholder="_268NXXXXXX" required>
+                            <p class="help-block"><?php echo _('The pattern controls blocking. Example: _268NXXXXXX matches a 10-digit number starting with 268 and a following digit 2-9. A leading + is optional; no country code is added or removed.') ?></p>
                         </div>
                         <div class="form-group">
                             <label for="description"><?php echo _('Description') ?></label>
@@ -203,6 +203,7 @@ $heading = _('Security - Toll Fraud Prevention');
                         <div class="form-group">
                             <label for="area_code"><?php echo _('Area/Country Code') ?></label>
                             <input type="text" class="form-control" name="area_code" id="area_code" placeholder="268" maxlength="10">
+                            <p class="help-block"><?php echo _('Optional label only; this field does not determine which numbers are blocked.') ?></p>
                         </div>
                         <div class="form-group">
                             <label>
@@ -227,10 +228,13 @@ $heading = _('Security - Toll Fraud Prevention');
                 </div>
                 <div class="panel-body">
                     <ul class="list-unstyled">
-                        <li><strong>_</strong> <?php echo _('= pattern start wildcard') ?></li>
+                        <li><strong>_</strong> <?php echo _('= start of a numeric pattern') ?></li>
+                        <li><strong>Z</strong> <?php echo _('= digit 1-9') ?></li>
                         <li><strong>N</strong> <?php echo _('= digit 2-9') ?></li>
                         <li><strong>X</strong> <?php echo _('= digit 0-9') ?></li>
-                        <li><strong>[1-9]</strong> <?php echo _('= digit range') ?></li>
+                        <li><strong>[1-9]</strong> <?php echo _('= digit range; sets such as [1237-9] are supported') ?></li>
+                        <li><strong>.</strong> <?php echo _('= one or more trailing digits (final token only)') ?></li>
+                        <li><strong>!</strong> <?php echo _('= zero or more trailing digits (final token only)') ?></li>
                     </ul>
                     <p class="text-muted"><?php echo _('Examples:') ?></p>
                     <ul class="list-unstyled">
@@ -257,7 +261,7 @@ $heading = _('Security - Toll Fraud Prevention');
                     <input type="hidden" name="id" id="edit_id" value="">
                     <div class="form-group">
                         <label><?php echo _('Pattern') ?></label>
-                        <input type="text" class="form-control" name="pattern" id="edit_pattern" required>
+                        <input type="text" class="form-control" name="pattern" id="edit_pattern" maxlength="20" required>
                     </div>
                     <div class="form-group">
                         <label><?php echo _('Description') ?></label>
@@ -265,7 +269,8 @@ $heading = _('Security - Toll Fraud Prevention');
                     </div>
                     <div class="form-group">
                         <label><?php echo _('Area Code') ?></label>
-                        <input type="text" class="form-control" name="area_code" id="edit_area_code">
+                        <input type="text" class="form-control" name="area_code" id="edit_area_code" maxlength="10">
+                        <p class="help-block"><?php echo _('Area code is a label only. Editing preserves the entry’s queue or global scope.') ?></p>
                     </div>
                     <div class="form-group">
                         <label>

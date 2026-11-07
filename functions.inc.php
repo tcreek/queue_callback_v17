@@ -39,7 +39,7 @@ function qcb_is_uninstall_context(): bool {
  */
 function queuecallback_configpageinit($pagename) {
     global $currentcomponent;
-    
+
     if ($pagename === 'qcallback' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $currentcomponent->addprocessfunc('queuecallback_process_config');
     }
@@ -89,19 +89,19 @@ function qcallback_hook_queues($viewing_itemid, $target_menuid) {
 function qcallback_hook_queues_dialplan($queue_id) {
     // Skip during uninstall to avoid rawname errors
     if (qcb_is_uninstall_context()) { return array(); }
-    
+
     // Only provide dialplan mods during actual reload
     if (!qcb_is_reload_context()) { return array(); }
-    
+
     // Check if callback is enabled for this queue
     $callback_config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
-    
+
     if (empty($callback_config['enabled'])) {
         return array();
     }
-    
-    $callback_key = $callback_config['callback_key'] ?: '#';
-    
+
+    $callback_key = (string)($callback_config['callback_key'] ?? '#');
+
     // Return dialplan modifications for this queue
     return array(
         'gosub' => 'queuecallback-handler,s,1(' . $callback_key . ')'
@@ -117,76 +117,11 @@ function queuecallback_hook_queues_pre($queue_id) {
 }
 
 /**
- * Create custom dialplan for callback-enabled queues
- * This will override the default queue behavior
+ * Legacy dialplan entry point; canonical generation preserves FreePBX queues.
  */
 function queuecallback_create_queue_dialplan() {
-    if (!qcb_is_reload_context() || qcb_is_uninstall_context()) { return; }
-    // Get all callback-enabled queues
-    $enabled_queues = FreePBX::Qcallback()->getCallbackEnabledQueues();
-    
-    if (empty($enabled_queues)) {
-        return;
-    }
-    
-    // Create custom dialplan file for callback queues
-    $dialplan_content = "; Queue Callback Custom Dialplan\n";
-    $dialplan_content .= "; This file modifies queues to include callback functionality\n\n";
-    
-    $dialplan_content .= "[ext-queues-custom]\n";
-    
-    foreach ($enabled_queues as $queue) {
-        $queue_id = $queue['queue_id'];
-        $callback_key = $queue['callback_key'] ?: '#';
-        
-        $dialplan_content .= "; Callback-enabled queue {$queue_id}\n";
-        $dialplan_content .= "exten => {$queue_id},1,Gosub(macro-user-callerid,s,1())\n";
-        $dialplan_content .= "exten => {$queue_id},n,Answer()\n";
-        $dialplan_content .= "exten => {$queue_id},n,Set(__FROMQUEUEEXTEN=\${CALLERID(number)})\n";
-        $dialplan_content .= "exten => {$queue_id},n,Set(QUEUECALLBACK_QUEUE={$queue_id})\n";
-        $dialplan_content .= "exten => {$queue_id},n,Set(QUEUECALLBACK_KEY={$callback_key})\n";
-        
-        // Play initial announcement if configured
-        if (!empty($queue['announce_id'])) {
-            $dialplan_content .= "exten => {$queue_id},n,Playback(custom/{$queue['announce_id']})\n";
-        }
-        
-        // Queue with callback option - proper gosub syntax
-        $dialplan_content .= "exten => {$queue_id},n,Queue({$queue_id},tc,,,,,,,,,queuecallback-handler-fixed,s,1({$callback_key}))\n";
-        $dialplan_content .= "exten => {$queue_id},n,Hangup()\n\n";
-    }
-    
-    // Write to extensions_custom.conf
-    $custom_file = '/etc/asterisk/extensions_custom.conf';
-    
-    // Read existing content
-    $existing_content = '';
-    if (file_exists($custom_file)) {
-        $existing_content = file_get_contents($custom_file);
-    }
-    
-    // Remove existing ext-queues-custom section if it exists
-    if (strpos($existing_content, '[ext-queues-custom]') !== false) {
-        $start = strpos($existing_content, '[ext-queues-custom]');
-        $end = strpos($existing_content, "\n[", $start + 1);
-        if ($end === false) {
-            $end = strlen($existing_content);
-        }
-        $existing_content = substr($existing_content, 0, $start) . substr($existing_content, $end);
-    }
-    
-    // Append our updated dialplan
-    file_put_contents($custom_file, $existing_content . "\n" . $dialplan_content, LOCK_EX);
-    
-    // Dialplan reload removed - only reload when actually needed
+    qcallback_get_config('asterisk');
 }
-
-
-
-
-
-
-
 
 
 /**
@@ -195,7 +130,7 @@ function queuecallback_create_queue_dialplan() {
 function queuecallback_process_config() {
     $action = $_REQUEST['action'] ?? '';
     $queue_id = $_REQUEST['queue_id'] ?? '';
-    
+
     switch ($action) {
         case 'add_callback':
             if ($queue_id) {
@@ -210,9 +145,9 @@ function queuecallback_process_config() {
                         'initiated_message_id' => null,
                         'confirm_prompt_id' => null
                     );
-                    
+
                     FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $default_config);
-                    
+
                     header('Content-Type: application/json');
                     echo json_encode(['status' => 'success', 'message' => 'Callback enabled for queue ' . $queue_id]);
                     exit;
@@ -223,19 +158,19 @@ function queuecallback_process_config() {
                 }
             }
             break;
-            
+
         case 'remove_callback':
             if ($queue_id) {
                 try {
                     // Disable callback
                     $config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
                     $config['enabled'] = 0;
-                    
+
                     FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $config);
-                    
+
                     // Cancel any pending callbacks
                     queuecallback_cancel_queue_callbacks($queue_id);
-                    
+
                     header('Content-Type: application/json');
                     echo json_encode(['status' => 'success', 'message' => 'Callback removed from queue ' . $queue_id]);
                     exit;
@@ -246,7 +181,7 @@ function queuecallback_process_config() {
                 }
             }
             break;
-            
+
         case 'get_pending_callbacks':
             if ($queue_id) {
                 $callbacks = queuecallback_get_pending_requests($queue_id);
@@ -255,7 +190,7 @@ function queuecallback_process_config() {
                 exit;
             }
             break;
-            
+
         case 'process_callback':
             $callback_id = $_REQUEST['callback_id'] ?? '';
             if ($callback_id) {
@@ -265,7 +200,7 @@ function queuecallback_process_config() {
                 exit;
             }
             break;
-            
+
         case 'cancel_callback':
             $callback_id = $_REQUEST['callback_id'] ?? '';
             if ($callback_id) {
@@ -285,12 +220,12 @@ function queuecallback_hook_queues_form($queue_data) {
     if (qcb_is_uninstall_context()) { return ''; }
     $queue_id = $queue_data['extension'] ?? '';
     $callback_config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
-    
+
     // Generate callback configuration HTML
     ob_start();
     include(__DIR__ . '/views/callback_config.php');
     $callback_html = ob_get_clean();
-    
+
     return $callback_html;
 }
 
@@ -299,11 +234,11 @@ function queuecallback_hook_queues_form($queue_data) {
  */
 function queuecallback_get_pending_requests($queue_id) {
     $db = FreePBX::Database();
-    
-    $sql = "SELECT * FROM queuecallback_requests 
-            WHERE queue_id = ? AND status IN ('pending', 'processing') 
+
+    $sql = "SELECT * FROM queuecallback_requests
+            WHERE queue_id = ? AND status IN ('pending', 'processing')
             ORDER BY time_requested ASC";
-    
+
     $stmt = $db->prepare($sql);
     $stmt->execute(array($queue_id));
     return $stmt->fetchAll(\PDO::FETCH_ASSOC);
@@ -314,24 +249,17 @@ function queuecallback_get_pending_requests($queue_id) {
  */
 function queuecallback_process_request($callback_id) {
     $db = FreePBX::Database();
-    
+
     // Get callback details
     $sql = "SELECT * FROM queuecallback_requests WHERE id = ?";
     $stmt = $db->prepare($sql);
     $stmt->execute(array($callback_id));
     $callback = $stmt->fetch(\PDO::FETCH_ASSOC);
-    
+
     if (empty($callback)) {
         return false;
     }
-    
-    // Update status to processing
-    $sql = "UPDATE queuecallback_requests 
-            SET status = 'processing', attempts = attempts + 1, last_attempt = ? 
-            WHERE id = ?";
-    $stmt = $db->prepare($sql);
-    $stmt->execute(array(time(), $callback_id));
-    
+
     // Create call file
     return queuecallback_create_call_file($callback);
 }
@@ -341,7 +269,7 @@ function queuecallback_process_request($callback_id) {
  */
 function queuecallback_cancel_request($callback_id) {
     $db = FreePBX::Database();
-    
+
     $sql = "UPDATE queuecallback_requests SET status = 'cancelled' WHERE id = ?";
     $stmt = $db->prepare($sql);
     return $stmt->execute(array($callback_id));
@@ -352,8 +280,8 @@ function queuecallback_cancel_request($callback_id) {
  */
 function queuecallback_cancel_queue_callbacks($queue_id) {
     $db = FreePBX::Database();
-    
-    $sql = "UPDATE queuecallback_requests SET status = 'cancelled', time_processed = ? 
+
+    $sql = "UPDATE queuecallback_requests SET status = 'cancelled', time_processed = ?
             WHERE queue_id = ? AND status IN ('pending', 'processing')";
     $stmt = $db->prepare($sql);
     return $stmt->execute(array(time(), $queue_id));
@@ -363,54 +291,9 @@ function queuecallback_cancel_queue_callbacks($queue_id) {
  * Delete callback configuration for a queue
  */
 function queuecallback_delete_config($queue_id) {
-    $db = FreePBX::Database();
-    
-    try {
-        // Start transaction for data consistency
-        $db->query("START TRANSACTION");
-        
-        // Get current configuration before deletion for logging
-        $sql = "SELECT * FROM queuecallback_config WHERE queue_id = ?";
-        $stmt = $db->prepare($sql);
-        $stmt->execute(array($queue_id));
-        $existing_config = $stmt->fetch(\PDO::FETCH_ASSOC);
-        
-        // Delete callback configuration
-        $sql = "DELETE FROM queuecallback_config WHERE queue_id = ?";
-        $stmt = $db->prepare($sql);
-        $stmt->execute(array($queue_id));
-        
-        // Cancel any pending callbacks
-        $sql = "UPDATE queuecallback_requests SET status = 'cancelled', time_processed = ? 
-                WHERE queue_id = ? AND status IN ('pending', 'processing')";
-        $stmt = $db->prepare($sql);
-        $stmt->execute(array(time(), $queue_id));
-        
-        // Get count of cancelled callbacks for logging
-        $sql = "SELECT COUNT(*) FROM queuecallback_requests 
-                WHERE queue_id = ? AND status = 'cancelled' 
-                AND time_processed = ?";
-        $stmt = $db->prepare($sql);
-        $stmt->execute(array($queue_id, time()));
-        $cancelled_count = $stmt->fetchColumn();
-        
-        // Commit transaction
-        $db->query("COMMIT");
-        
-        // Log the deletion
-        if ($existing_config) {
-            freepbx_log(FPBX_LOG_INFO, "Queue Callback: Deleted configuration for queue $queue_id, cancelled $cancelled_count pending callbacks");
-        }
-        
-        // Recreate database events if needed (in case this was the only queue with shortest interval)
-        queuecallback_recreate_events();
-        
-        return true;
-        
-    } catch (Exception $e) {
-        // Rollback on error
-        $db->query("ROLLBACK");
-        freepbx_log(FPBX_LOG_ERROR, "Queue Callback: Failed to delete configuration for queue $queue_id: " . $e->getMessage());
+    try { return FreePBX::Qcallback()->deleteQueueCallbackConfig($queue_id); }
+    catch (Throwable $e) {
+        error_log('Queue Callback: configuration deletion failed type=' . get_class($e));
         return false;
     }
 }
@@ -419,87 +302,16 @@ function queuecallback_delete_config($queue_id) {
  * Create a call file for callback
  */
 function queuecallback_create_call_file($callback) {
-    // Get callback configuration to get return message
-    $callback_config = FreePBX::Qcallback()->getQueueCallbackConfig($callback['queue_id']);
-    $return_message = $callback_config['return_message_id'] ?? '';
-    
-    $call_file_content = "Channel: Local/{$callback['callback_number']}@from-internal\n";
-    $call_file_content .= "CallerID: Queue Callback <{$callback['queue_id']}>\n";
-    $call_file_content .= "MaxRetries: 2\n";
-    $call_file_content .= "RetryTime: 60\n";
-    $call_file_content .= "WaitTime: 30\n";
-    $call_file_content .= "Context: queuecallback-outbound\n";
-    $call_file_content .= "Extension: s\n";
-    $call_file_content .= "Priority: 1\n";
-    $call_file_content .= "Archive: yes\n";
-    $call_file_content .= "SetVar: __CALLBACK_ID={$callback['id']}\n";
-    $call_file_content .= "SetVar: __CALLBACK_QUEUE_ID={$callback['queue_id']}\n";
-    $call_file_content .= "SetVar: __CALLBACK_RETURN_MSG={$return_message}\n";
-    $call_file_content .= "SetVar: __CALLBACK_CUSTOMER_NUM={$callback['callback_number']}\n";
-    
-    $call_file = "/tmp/queuecallback_{$callback['id']}.call";
-    
-    if (file_put_contents($call_file, $call_file_content)) {
-        chmod($call_file, 0777);
-        if (rename($call_file, "/var/spool/asterisk/outgoing/" . basename($call_file))) {
-            return true;
-        }
-    }
-    
-    return false;
+    require_once __DIR__ . '/callback_dispatch.php';
+    $result = qcallback_dispatch_request(FreePBX::Database(), (int)$callback['id']);
+    return $result['published'];
 }
 
 /**
  * Process pending callbacks (called by maintenance hook)
  */
 function queuecallback_process_pending() {
-    $db = FreePBX::Database();
-    
-    try {
-        // Check trigger table
-        $sql = "SELECT last_run FROM queuecallback_trigger WHERE id = 1";
-        $stmt = $db->prepare($sql);
-        $stmt->execute();
-        $trigger = $stmt->fetch(\PDO::FETCH_ASSOC);
-        
-        if (!$trigger) {
-            return; // No trigger set
-        }
-        
-        $last_trigger = $trigger['last_run'];
-        $last_processed_file = '/tmp/queuecallback_last_processed';
-        
-        $last_processed = 0;
-        if (file_exists($last_processed_file)) {
-            $last_processed = (int)file_get_contents($last_processed_file);
-        }
-        
-        // Only process if trigger is newer
-        if ($last_trigger <= $last_processed) {
-            return;
-        }
-        
-        // Get pending callbacks
-        $sql = "SELECT * FROM queuecallback_requests 
-                WHERE status = 'pending' 
-                AND (last_attempt IS NULL OR last_attempt < ?) 
-                AND attempts < max_attempts 
-                LIMIT 10";
-        
-        $stmt = $db->prepare($sql);
-        $stmt->execute(array(time() - 300));
-        $callbacks = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-        
-        foreach ($callbacks as $callback) {
-            queuecallback_process_request($callback['id']);
-        }
-        
-        // Update last processed time
-        file_put_contents($last_processed_file, $last_trigger);
-        
-    } catch (Exception $e) {
-        error_log("Queue Callback processing error: " . $e->getMessage());
-    }
+    FreePBX::Qcallback()->processIntelligentCallbacks();
 }
 
 /**
@@ -515,218 +327,22 @@ function queuecallback_hook_maintenance() {
  * This function is called by FreePBX during dialplan generation
  */
 function qcallback_get_config($engine) {
-    // Skip during uninstall to avoid rawname errors
-    if (qcb_is_uninstall_context()) { return; }
-    
-    // Do nothing unless this is the real reload run
-    if (!qcb_is_reload_context()) { return; }
-    
-    if ($engine !== 'asterisk') { return; }
-    
-    // Generate queue announcements and callback files on every Apply Config.
-    // The surrounding FreePBX reload applies them once generation is complete.
+    if ($engine !== 'asterisk' || !qcb_is_reload_context() || qcb_is_uninstall_context()) { return; }
     FreePBX::Qcallback()->generateCallbackDialplan(true, false);
-    
-    global $ext;
-    
-    switch($engine) {
-        case "asterisk":
-            // Get all callback-enabled queues from database
-            $enabled_queues = queuecallback_get_enabled_queues();
-            
-            if (!empty($enabled_queues)) {
-                // Create individual DTMF handler contexts for each queue
-                foreach ($enabled_queues as $queue) {
-                    $queue_id = $queue['queue_id'];
-                    $callback_key = $queue['callback_key'] ?: '#';
-                    
-                    // Create queue-specific callback handler context
-                    $context = 'qcb-handler-' . $queue_id;
-                    
-                    // Handler for s extension (called by gosub from Queue)
-                    $ext->add($context, 's', '', new ext_noop('DTMF handler for queue ' . $queue_id));
-                    $ext->add($context, 's', '', new ext_noop('Key pressed: ${EXTEN}'));
-                    $ext->add($context, 's', '', new ext_gotoif('$["${EXTEN}" != "' . $callback_key . '"]', 'ignore'));
-                    $ext->add($context, 's', '', new ext_noop('Callback key ' . $callback_key . ' pressed - processing'));
-                    $ext->add($context, 's', '', new ext_set('CALLBACK_NUMBER', '${CALLERID(number)}'));
-                    $ext->add($context, 's', '', new ext_set('CALLBACK_QUEUE', $queue_id));
-                    $ext->add($context, 's', '', new ext_set('QUEUENAME', $queue_id));
-                    $ext->add($context, 's', '', new ext_agi('queuecallback-store.agi'));
-                    $ext->add($context, 's', '', new ext_playback('thank-you'));
-                    $ext->add($context, 's', '', new ext_playback('your-call-will-be-returned'));
-                    $ext->add($context, 's', '', new ext_hangup());
-                    $ext->add($context, 's', 'ignore', new ext_noop('Non-callback key ignored'));
-                    $ext->add($context, 's', '', new ext_return());
-                    
-                    // Direct handler for the callback key
-                    $ext->add($context, $callback_key, '', new ext_noop('Direct callback key ' . $callback_key . ' pressed'));
-                    $ext->add($context, $callback_key, '', new ext_set('CALLBACK_NUMBER', '${CALLERID(number)}'));
-                    $ext->add($context, $callback_key, '', new ext_set('CALLBACK_QUEUE', $queue_id));
-                    $ext->add($context, $callback_key, '', new ext_set('QUEUENAME', $queue_id));
-                    $ext->add($context, $callback_key, '', new ext_agi('queuecallback-store.agi'));
-                    $ext->add($context, $callback_key, '', new ext_playback('thank-you'));
-                    $ext->add($context, $callback_key, '', new ext_playback('your-call-will-be-returned'));
-                    $ext->add($context, $callback_key, '', new ext_hangup());
-                }
-            }
-            
-            // Create outbound callback context - DISABLED: handled by extensions_custom.conf in install.php
-            // $context = 'queuecallback-outbound';
-            // $ext->add($context, '_X.', '', new ext_noop('Processing callback to ${EXTEN}'));
-            // $ext->add($context, '_X.', '', new ext_set('CALLERID(name)', 'Queue Callback'));
-            // $ext->add($context, '_X.', '', new ext_answer());
-            // $ext->add($context, '_X.', '', new ext_wait('1'));
-            // $ext->add($context, '_X.', '', new ext_gotoif('$["${CALLBACK_RETURN_MSG}" != ""]', 'custom_msg'));
-            // $ext->add($context, '_X.', '', new ext_playback('thank-you-for-calling'));
-            // $ext->add($context, '_X.', '', new ext_playback('pls-hold-while-try'));
-            // $ext->add($context, '_X.', '', new ext_goto('connect_queue'));
-            // $ext->add($context, '_X.', 'custom_msg', new ext_playback('custom/${CALLBACK_RETURN_MSG}'));
-            // $ext->add($context, '_X.', 'connect_queue', new ext_goto('ext-queues,${CALLBACK_QUEUE_ID},1'));
-            
-            break;
-    }
 }
 
 /**
  * Get callback-enabled queues from database
  */
 function queuecallback_get_enabled_queues() {
-    try {
-        $db = FreePBX::Database();
-        // Simple query without join to avoid collation issues
-        $sql = "SELECT queue_id, callback_key, announce_id, processing_interval
-                FROM queuecallback_config
-                WHERE enabled = 1";
-        $stmt = $db->prepare($sql);
-        $stmt->execute();
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Exception $e) {
-        freepbx_log(FPBX_LOG_ERROR, "Queue Callback: Error getting enabled queues: " . $e->getMessage());
-        return array();
-    }
+    return FreePBX::Qcallback()->getCallbackEnabledQueues();
 }
 
 /**
- * Write callback dialplan to extensions_custom.conf
- * This ensures the dialplan persists and takes precedence over FreePBX generated dialplan
- * UPDATED: Now properly implements IN-QUEUE callback handling with gosub
+ * Legacy writer name; use the shared BMO generator.
  */
 function queuecallback_write_custom_dialplan() {
-    if (!qcb_is_reload_context() || qcb_is_uninstall_context()) { return; }
-    freepbx_log(FPBX_LOG_INFO, "Queue Callback: Starting IN-QUEUE custom dialplan write");
-    
-    $enabled_queues = queuecallback_get_enabled_queues();
-    
-    freepbx_log(FPBX_LOG_INFO, "Queue Callback: Found " . count($enabled_queues) . " enabled queues");
-    
-    if (empty($enabled_queues)) {
-        freepbx_log(FPBX_LOG_INFO, "Queue Callback: No enabled queues, skipping dialplan write");
-        return;
-    }
-    
-    $custom_file = '/etc/asterisk/extensions_custom.conf';
-    
-    // Read existing content
-    $existing_content = '';
-    if (file_exists($custom_file)) {
-        $existing_content = file_get_contents($custom_file);
-    }
-    
-    // Remove existing callback queue sections
-    $existing_content = preg_replace('/; Queue Callback Module - Start.*?; Queue Callback Module - End\n/s', '', $existing_content);
-    // Also remove stale QCALLBACK QUEUE ROUTES overrides from older versions
-    $existing_content = preg_replace('/; BEGIN QCALLBACK QUEUE ROUTES.*?; END QCALLBACK QUEUE ROUTES\n/s', '', $existing_content);
-    // Remove any stale [ext-queues] overrides that conflict with FreePBX defaults
-    $existing_content = preg_replace('/\n\[ext-queues\]\ninclude => ext-queues-custom\nexten => (\d+),1,NoOp\(Queue callback route for queue \1\)\n same => n,Set\(QOSUB=[^\n]+\)\n same => n,Set\(QGOSUB=[^\n]+\)\n same => n,Queue\(\d+\|t\)\n/s', '', $existing_content);
-    
-    // Build new IN-QUEUE callback dialplan
-    $callback_dialplan = "\n; Queue Callback Module - Start\n";
-    $callback_dialplan .= "; IN-QUEUE callback handling - callbacks work WHILE in queue\n";
-    $callback_dialplan .= "; Generated automatically - do not edit manually\n\n";
-    
-    $callback_dialplan .= "[from-internal-custom]\n";
-    
-    foreach ($enabled_queues as $queue) {
-        $queue_id = $queue['queue_id'];
-        $callback_key = $queue['callback_key'] ?: '#';
-        $announce_id = $queue['announce_id'];
-        
-        $callback_dialplan .= "; IN-QUEUE Callback-enabled queue $queue_id (key: $callback_key)\n";
-        $callback_dialplan .= "exten => $queue_id,1,NoOp(Entering IN-QUEUE callback queue $queue_id)\n";
-        $callback_dialplan .= " same => n,Gosub(macro-user-callerid,s,1())\n";
-        $callback_dialplan .= " same => n,Answer()\n";
-        $callback_dialplan .= " same => n,Wait(1)\n";
-        $callback_dialplan .= " same => n,Set(__FROMQUEUEEXTEN=\${CALLERID(number)})\n";
-        $callback_dialplan .= " same => n,Set(__QUEUENAME=$queue_id)\n";
-        $callback_dialplan .= " same => n,Set(__CALLBACK_QUEUE=$queue_id)\n";
-        $callback_dialplan .= " same => n,Set(__CALLBACK_KEY=$callback_key)\n";
-        
-        // Add announcement if configured
-        if ($announce_id) {
-            $callback_dialplan .= " same => n,Playback(custom/$announce_id)\n";
-        } else {
-            // Default announcement about callback option
-            $callback_dialplan .= " same => n,Playback(to-request-callback)\n";
-            $callback_dialplan .= " same => n,Playback(press)\n";
-            if ($callback_key == '*') {
-                $callback_dialplan .= " same => n,Playback(digits/star)\n";
-            } elseif ($callback_key == '#') {
-                $callback_dialplan .= " same => n,Playback(digits/pound)\n";
-            } else {
-                $callback_dialplan .= " same => n,SayDigits($callback_key)\n";
-            }
-            $callback_dialplan .= " same => n,Playback(at-any-time)\n";
-        }
-        
-        // CRITICAL: Use Queue() with 'H' option and gosub for IN-QUEUE DTMF handling
-        // The gosub context handles DTMF while caller is IN the queue
-        $callback_dialplan .= " same => n,Queue($queue_id,tH,,,,,,,,,qcb-handler-$queue_id,s,1)\n";
-        $callback_dialplan .= " same => n,Hangup()\n\n";
-        
-    }
-    
-    // Add individual DTMF handler contexts for each queue
-    foreach ($enabled_queues as $queue) {
-        $queue_id = $queue['queue_id'];
-        $callback_key = $queue['callback_key'] ?: '#';
-        
-        $callback_dialplan .= "[qcb-handler-$queue_id]\n";
-        $callback_dialplan .= "; IN-QUEUE DTMF handler for queue $queue_id (key: $callback_key)\n";
-        
-        // Handler for s extension (called by gosub from Queue)
-        $callback_dialplan .= "exten => s,1,NoOp(DTMF handler activated for queue $queue_id)\n";
-        $callback_dialplan .= " same => n,NoOp(Key pressed: \${EXTEN})\n";
-        $callback_dialplan .= " same => n,GotoIf(\$[\"\${EXTEN}\" != \"$callback_key\"]?ignore)\n";
-        $callback_dialplan .= " same => n,NoOp(*** Callback key $callback_key pressed - exiting queue ***)\n";
-        $callback_dialplan .= " same => n,Set(CALLBACK_NUMBER=\${CALLERID(number)})\n";
-        $callback_dialplan .= " same => n,Set(CALLBACK_QUEUE=$queue_id)\n";
-        $callback_dialplan .= " same => n,Set(QUEUENAME=$queue_id)\n";
-        $callback_dialplan .= " same => n,AGI(queuecallback-store.agi)\n";
-        $callback_dialplan .= " same => n,Playback(thank-you)\n";
-        $callback_dialplan .= " same => n,Playback(your-call-will-be-returned)\n";
-        $callback_dialplan .= " same => n,Hangup()\n";
-        $callback_dialplan .= " same => n(ignore),NoOp(Non-callback key ignored)\n";
-        $callback_dialplan .= " same => n,Return()\n\n";
-        
-        // Direct handler for the callback key
-        $callback_dialplan .= "exten => $callback_key,1,NoOp(Direct callback key $callback_key pressed)\n";
-        $callback_dialplan .= " same => n,Set(CALLBACK_NUMBER=\${CALLERID(number)})\n";
-        $callback_dialplan .= " same => n,Set(CALLBACK_QUEUE=$queue_id)\n";
-        $callback_dialplan .= " same => n,Set(QUEUENAME=$queue_id)\n";
-        $callback_dialplan .= " same => n,AGI(queuecallback-store.agi)\n";
-        $callback_dialplan .= " same => n,Playback(thank-you)\n";
-        $callback_dialplan .= " same => n,Playback(your-call-will-be-returned)\n";
-        $callback_dialplan .= " same => n,Hangup()\n\n";
-    }
-    
-    $callback_dialplan .= "; Queue Callback Module - End\n";
-    
-    // Write updated content
-    file_put_contents($custom_file, $existing_content . $callback_dialplan, LOCK_EX);
-    
-    // Dialplan reload removed - only reload when actually needed
-    
-    freepbx_log(FPBX_LOG_INFO, "Queue Callback: Custom dialplan written for " . count($enabled_queues) . " callback-enabled queues");
+    qcallback_get_config('asterisk');
 }
 
 /**
@@ -753,60 +369,14 @@ function queuecallback_modify_queue_dialplan($queue_id, &$ext, $context) {
 function queuecallback_queues_dialplan_hook($queue_id) {
     // Disabled - we handle callback queues via ext-queues-custom context
     return array();
-}/**
- * 
+}
+
+/**
+ *
 Recreate database events based on current queue configurations
  */
 function queuecallback_recreate_events() {
-    try {
-        $db = FreePBX::Database();
-        
-        // Get the shortest processing interval from all enabled queues
-        $sql = "SELECT MIN(processing_interval) as min_interval FROM queuecallback_config WHERE enabled = 1";
-        $stmt = $db->prepare($sql);
-        $stmt->execute();
-        $result = $stmt->fetch(\PDO::FETCH_ASSOC);
-        $interval = ($result && $result['min_interval']) ? (int)$result['min_interval'] : null;
-        
-        // Drop existing events
-        $db->query("DROP EVENT IF EXISTS queuecallback_trigger");
-        
-        // Only create events if there are enabled queues
-        if ($interval) {
-            // Create the trigger event
-            $sql = "
-            CREATE EVENT queuecallback_trigger
-            ON SCHEDULE EVERY {$interval} MINUTE
-            STARTS CURRENT_TIMESTAMP
-            DO
-            BEGIN
-                INSERT INTO queuecallback_trigger (last_run) 
-                VALUES (UNIX_TIMESTAMP()) 
-                ON DUPLICATE KEY UPDATE last_run = UNIX_TIMESTAMP();
-                
-                -- Reset stuck processing requests
-                UPDATE queuecallback_requests 
-                SET status = 'pending' 
-                WHERE status = 'processing' 
-                AND last_attempt < UNIX_TIMESTAMP() - 3600 
-                AND attempts < max_attempts;
-                
-                -- Mark failed requests
-                UPDATE queuecallback_requests 
-                SET status = 'failed' 
-                WHERE attempts >= max_attempts 
-                AND status IN ('pending', 'processing');
-            END";
-            
-            $db->query($sql);
-            freepbx_log(FPBX_LOG_INFO, "Queue Callback: Database events recreated with {$interval} minute interval");
-        } else {
-            freepbx_log(FPBX_LOG_INFO, "Queue Callback: No enabled queues, database events removed");
-        }
-        
-    } catch (Exception $e) {
-        freepbx_log(FPBX_LOG_ERROR, "Queue Callback: Failed to recreate database events: " . $e->getMessage());
-    }
+    FreePBX::Qcallback()->refreshCallbackEvents();
 }
 
 /**
@@ -848,10 +418,10 @@ function queuecallback_bulk_queue_operation($operation, $queue_ids) {
     if (!is_array($queue_ids)) {
         $queue_ids = array($queue_ids);
     }
-    
+
     $success_count = 0;
     $total_count = count($queue_ids);
-    
+
     foreach ($queue_ids as $queue_id) {
         switch ($operation) {
             case 'delete':
@@ -859,13 +429,13 @@ function queuecallback_bulk_queue_operation($operation, $queue_ids) {
                     $success_count++;
                 }
                 break;
-                
+
             case 'add':
                 if (queuecallback_add_queue_config($queue_id)) {
                     $success_count++;
                 }
                 break;
-                
+
             case 'disable':
                 $config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
                 $config['enabled'] = 0;
@@ -874,14 +444,14 @@ function queuecallback_bulk_queue_operation($operation, $queue_ids) {
                 break;
         }
     }
-    
+
     freepbx_log(FPBX_LOG_INFO, "Queue Callback: Bulk $operation operation completed: $success_count/$total_count queues processed");
-    
+
     // Recreate events after bulk operations
     if ($operation == 'delete' || $operation == 'disable') {
         queuecallback_recreate_events();
     }
-    
+
     return $success_count;
 }
 
@@ -903,59 +473,10 @@ function queuecallback_validate_queue($queue_id) {
 }
 
 /**
- * Generate callback-enabled queue contexts with proper DTMF handling
+ * Legacy framework generator; delegate instead of overriding ext-queues.
  */
 function generateCallbackEnabledQueueContexts($ext) {
-    try {
-        // Get all callback-enabled queues
-        $enabled_queues = FreePBX::Qcallback()->getCallbackEnabledQueues();
-        
-        if (empty($enabled_queues)) {
-            return;
-        }
-        
-        // Create custom context for callback-enabled queues
-        $context = 'ext-queues-callback';
-        
-        foreach ($enabled_queues as $queue) {
-            $queue_id = $queue['queue_id'];
-            $callback_key = $queue['callback_key'] ?: '#';
-            
-            // Create custom queue extension with DTMF handling
-            $ext->add($context, $queue_id, '', new ext_noop("Callback-enabled queue {$queue_id}"));
-            $ext->add($context, $queue_id, '', new ext_gosub('macro-user-callerid,s,1()'));
-            $ext->add($context, $queue_id, '', new ext_answer());
-            $ext->add($context, $queue_id, '', new ext_set('__FROMQUEUEEXTEN', '${CALLERID(number)}'));
-            $ext->add($context, $queue_id, '', new ext_set('QUEUENAME', $queue_id));
-            $ext->add($context, $queue_id, '', new ext_set('CALLBACK_QUEUE', $queue_id));
-            $ext->add($context, $queue_id, '', new ext_set('CALLBACK_KEY', $callback_key));
-            
-            // Play initial announcement if configured
-            if (!empty($queue['announce_id'])) {
-                $ext->add($context, $queue_id, '', new ext_playback("custom/{$queue['announce_id']}"));
-            }
-            
-            // Set up DTMF handling - use H option to enable DTMF during queue wait
-            $ext->add($context, $queue_id, '', new ext_set('EXITCONTEXT', 'queuecallback-dtmf'));
-            
-            // Queue with DTMF handling enabled (H option allows DTMF to break out)
-            $ext->add($context, $queue_id, '', new ext_queue($queue_id, 'tcH', '', '', '', '', '', '', '', '', '', ''));
-            
-            // If queue exits normally (no callback requested)
-            $ext->add($context, $queue_id, '', new ext_hangup());
-        }
-        
-        // Also override the main ext-queues context for callback-enabled queues
-        foreach ($enabled_queues as $queue) {
-            $queue_id = $queue['queue_id'];
-            
-            // Override the standard queue extension to redirect to our callback-enabled version
-            $ext->add('ext-queues', $queue_id, '', new ext_goto("ext-queues-callback,{$queue_id},1"));
-        }
-        
-    } catch (Exception $e) {
-        freepbx_log(FPBX_LOG_ERROR, "Queue Callback: Error generating callback queue contexts: " . $e->getMessage());
-    }
+    qcallback_get_config('asterisk');
 }
 
 /**
@@ -964,25 +485,25 @@ function generateCallbackEnabledQueueContexts($ext) {
 function queuecallback_cleanup_orphaned_configs() {
     try {
         $db = FreePBX::Database();
-        
+
         // Find callback configs for queues that no longer exist (with collation fix)
         $sql = "SELECT qc.queue_id
                 FROM queuecallback_config qc
                 LEFT JOIN queues_config q ON qc.queue_id COLLATE utf8_general_ci = q.extension COLLATE utf8_general_ci
                 WHERE q.extension IS NULL";
-        
+
         $stmt = $db->prepare($sql);
         $stmt->execute();
         $orphaned = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-        
+
         if (!empty($orphaned)) {
             $orphaned_ids = array_column($orphaned, 'queue_id');
             $cleanup_count = queuecallback_bulk_queue_operation('delete', $orphaned_ids);
-            
+
             freepbx_log(FPBX_LOG_INFO, "Queue Callback: Cleaned up $cleanup_count orphaned configurations");
             return $cleanup_count;
         }
-        
+
     } catch (Exception $e) {
         // If collation error, try getting all configs and checking manually
         try {
@@ -990,30 +511,30 @@ function queuecallback_cleanup_orphaned_configs() {
             $stmt = $db->prepare($sql);
             $stmt->execute();
             $configs = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-            
+
             $sql = "SELECT extension FROM queues_config";
             $stmt = $db->prepare($sql);
             $stmt->execute();
             $queues = array_column($stmt->fetchAll(\PDO::FETCH_ASSOC), 'extension');
-            
+
             $orphaned_ids = array();
             foreach ($configs as $config) {
                 if (!in_array($config['queue_id'], $queues)) {
                     $orphaned_ids[] = $config['queue_id'];
                 }
             }
-            
+
             if (!empty($orphaned_ids)) {
                 $cleanup_count = queuecallback_bulk_queue_operation('delete', $orphaned_ids);
                 freepbx_log(FPBX_LOG_INFO, "Queue Callback: Cleaned up $cleanup_count orphaned configurations");
                 return $cleanup_count;
             }
-            
+
         } catch (Exception $e2) {
             freepbx_log(FPBX_LOG_ERROR, "Queue Callback: Failed to cleanup orphaned configurations: " . $e2->getMessage());
         }
     }
-    
+
     return 0;
 }
 
@@ -1034,24 +555,7 @@ function queuecallback_hook_daily_maintenance() {
  * Hook called when a queue is added via the GUI
  */
 function queuecallback_hook_queue_add($queue_id) {
-    try {
-        // Add default callback configuration for new queue
-        $default_config = array(
-            'enabled' => 0,
-            'announce_id' => null,
-            'callback_key' => '#',
-            'processing_interval' => 30,
-            'alt_message_id' => null,
-            'initiated_message_id' => null,
-            'confirm_prompt_id' => null
-        );
-        
-        FreePBX::Qcallback()->setQueueCallbackConfig($queue_id, $default_config);
-        freepbx_log(FPBX_LOG_INFO, "Queue Callback: Default configuration added for new queue $queue_id");
-
-    } catch (Exception $e) {
-        freepbx_log(FPBX_LOG_ERROR, "Queue Callback: Failed to add configuration for new queue $queue_id: " . $e->getMessage());
-    }
+    return queuecallback_add_queue_config($queue_id);
 }
 
 /**
@@ -1061,7 +565,7 @@ function queuecallback_hook_queue_delete($queue_id) {
     try {
         FreePBX::Qcallback()->deleteQueueCallbackConfig($queue_id);
         freepbx_log(FPBX_LOG_INFO, "Queue Callback: Configuration deleted for queue $queue_id");
-        
+
     } catch (Exception $e) {
         freepbx_log(FPBX_LOG_ERROR, "Queue Callback: Failed to delete configuration for queue $queue_id: " . $e->getMessage());
     }
@@ -1072,69 +576,69 @@ function queuecallback_hook_queue_delete($queue_id) {
  */
 function queuecallback_check_database_integrity() {
     $issues = array();
-    
+
     try {
         $db = FreePBX::Database();
-        
+
         // Check for orphaned callback configurations
-        $sql = "SELECT qc.queue_id 
-                FROM queuecallback_config qc 
-                LEFT JOIN queues_config q ON qc.queue_id = q.extension 
+        $sql = "SELECT qc.queue_id
+                FROM queuecallback_config qc
+                LEFT JOIN queues_config q ON qc.queue_id = q.extension
                 WHERE q.extension IS NULL";
         $stmt = $db->prepare($sql);
         $stmt->execute();
         $orphaned_configs = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-        
+
         if (!empty($orphaned_configs)) {
             $issues[] = "Found " . count($orphaned_configs) . " orphaned callback configurations";
         }
-        
+
         // Check for callback requests for non-existent queues
-        $sql = "SELECT DISTINCT qr.queue_id 
-                FROM queuecallback_requests qr 
-                LEFT JOIN queues_config q ON qr.queue_id = q.extension 
-                WHERE q.extension IS NULL 
+        $sql = "SELECT DISTINCT qr.queue_id
+                FROM queuecallback_requests qr
+                LEFT JOIN queues_config q ON qr.queue_id = q.extension
+                WHERE q.extension IS NULL
                 AND qr.status IN ('pending', 'processing')";
         $stmt = $db->prepare($sql);
         $stmt->execute();
         $orphaned_requests = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-        
+
         if (!empty($orphaned_requests)) {
             $issues[] = "Found pending callback requests for " . count($orphaned_requests) . " non-existent queues";
         }
-        
+
         // Check for stuck processing requests
-        $sql = "SELECT COUNT(*) FROM queuecallback_requests 
-                WHERE status = 'processing' 
+        $sql = "SELECT COUNT(*) FROM queuecallback_requests
+                WHERE status = 'processing'
                 AND last_attempt < ?";
         $stmt = $db->prepare($sql);
         $stmt->execute(array(time() - 3600));
         $stuck_requests = $stmt->fetchColumn();
-        
+
         if ($stuck_requests > 0) {
-            $issues[] = "Found $stuck_requests stuck processing requests";
+            $issues[] = "Found $stuck_requests long-running processing requests; inspect active calls and archives before recovery";
         }
-        
+
         // Check database events
         $sql = "SELECT COUNT(*) FROM queuecallback_config WHERE enabled = 1";
         $stmt = $db->prepare($sql);
         $stmt->execute();
         $enabled_queues = $stmt->fetchColumn();
-        
+
         $stmt = $db->prepare("SHOW EVENTS LIKE 'queuecallback_%'");
         $stmt->execute();
         $events = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-        
+
         if ($enabled_queues > 0 && empty($events)) {
             $issues[] = "Database events missing but callback queues are enabled";
         } elseif ($enabled_queues == 0 && !empty($events)) {
             $issues[] = "Database events exist but no callback queues are enabled";
         }
-        
+
     } catch (Exception $e) {
         $issues[] = "Database integrity check failed: " . $e->getMessage();
     }
-    
+
     return $issues;
 }
 /**
@@ -1144,13 +648,13 @@ function queuecallback_check_database_integrity() {
  */
 function qcallback_hook_queues_config($queue_id, $queue_data = null) {
     if (!qcb_is_reload_context() || qcb_is_uninstall_context()) { return array(); }
-    
+
     // This could be called when queue configuration is being processed
     $callback_config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
-    
+
     if (!empty($callback_config['enabled'])) {
-        $callback_key = $callback_config['callback_key'] ?: '#';
-        
+        $callback_key = (string)($callback_config['callback_key'] ?? '#');
+
         // Return configuration that might be used by queues module
         return array(
             'callback_enabled' => true,
@@ -1158,7 +662,7 @@ function qcallback_hook_queues_config($queue_id, $queue_data = null) {
             'callback_gosub' => 'queuecallback-handler,s,1(' . $callback_key . ')'
         );
     }
-    
+
     return array();
 }
 
@@ -1170,64 +674,43 @@ function qcallback_hook_queues_generate($queue_id) {
     // Same guard
     if (!qcb_is_reload_context()) { return array(); }
     return qcallback_hook_queues_dialplan($queue_id);
-}/**
+}
+
+/**
 
  * Generate callback dialplan for enabled queues
  * This automatically creates custom dialplan entries for callback-enabled queues
  */
 function generateCallbackQueueDialplan(&$ext) {
-    try {
-        $callback_queues = FreePBX::Qcallback()->getCallbackEnabledQueues();
-        
-        if (!empty($callback_queues)) {
-            // Update extensions_custom.conf with callback-enabled queues
-            $custom_file = '/etc/asterisk/extensions_custom.conf';
-            $existing_content = '';
-            
-            if (file_exists($custom_file)) {
-                $existing_content = file_get_contents($custom_file);
-            }
-            
-            // Remove existing callback queue entries
-            $existing_content = preg_replace('/; Auto-generated callback queues.*?\n\n/s', '', $existing_content);
-            
-            // Generate new callback queue dialplan
-            $dialplan = "\n; Auto-generated callback queues\n";
-            $dialplan .= "[from-internal-custom]\n";
-            
-            foreach ($callback_queues as $queue) {
-                $queue_id = $queue['queue_id'];
-                $callback_key = $queue['callback_key'] ?: '#';
-                
-                $dialplan .= "exten => $queue_id,1,NoOp(Callback-enabled queue $queue_id)\n";
-                $dialplan .= "exten => $queue_id,n,Gosub(macro-user-callerid,s,1())\n";
-                $dialplan .= "exten => $queue_id,n,Answer()\n";
-                $dialplan .= "exten => $queue_id,n,Set(__FROMQUEUEEXTEN=\${CALLERID(number)})\n";
-                $dialplan .= "exten => $queue_id,n,Set(QUEUENAME=$queue_id)\n";
-                $dialplan .= "exten => $queue_id,n,Set(CALLBACK_QUEUE=$queue_id)\n";
-                $dialplan .= "exten => $queue_id,n,Set(CALLBACK_KEY=$callback_key)\n";
-                
-                // Get queue configuration
-                $db = FreePBX::Database();
-                $sql = "SELECT * FROM queues_config WHERE extension = ?";
-                $stmt = $db->prepare($sql);
-                $stmt->execute(array($queue_id));
-                $queue_config = $stmt->fetch(\PDO::FETCH_ASSOC);
-                
-                // Play announcement from callback config if configured
-                if (!empty($queue['announce_id'])) {
-                    $dialplan .= "exten => $queue_id,n,Playback(custom/{$queue['announce_id']})\n";
-                }
-                
-                $dialplan .= "exten => $queue_id,n,Queue($queue_id,tc,,,,,,,,,,queuecallback-handler-fixed\\,s\\,1($callback_key))\n";
-                $dialplan .= "exten => $queue_id,n,Hangup()\n\n";
-            }
-            
-            // Write updated content
-            file_put_contents($custom_file, $existing_content . $dialplan, LOCK_EX);
-        }
-        
-    } catch (Exception $e) {
-        freepbx_log(FPBX_LOG_ERROR, "Queue Callback: Error in generateCallbackQueueDialplan: " . $e->getMessage());
-    }
+    qcallback_get_config('asterisk');
 }
+
+/** Compatibility entry point; manual calls share automatic dispatch checks. */
+function queuecallback_process_single_callback($callback) {
+    return queuecallback_create_call_file($callback);
+}
+
+/** Compatibility GUI hook; queue settings use the same BMO config saver. */
+function queuecallback_hook_queues($viewing_itemid, $target_menuid, $item = null) {
+    if ($target_menuid !== 'queues' || $viewing_itemid === '') { return; }
+    $queue_id = $viewing_itemid;
+    $callback_config = FreePBX::Qcallback()->getQueueCallbackConfig($queue_id);
+    include __DIR__ . '/views/callback_config.php';
+}
+
+function queuecallback_hook_queues_configprocess() {
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || ($_POST['action'] ?? '') !== 'edit'
+        || !isset($_POST['extdisplay'], $_POST['callback_enabled'])) { return; }
+    $config = [];
+    foreach (['enabled','announce_id','announce_frequency','processing_interval','call_first',
+        'confirm_number','alt_number_key','alt_message_id','confirm_message_id','return_message_id',
+        'initiated_message_id','confirm_prompt_id','outbound_route_id','retry_interval','max_attempts',
+        'return_confirm_timeout','return_confirm_repeats'] as $field) {
+        if (array_key_exists('callback_' . $field, $_POST)) { $config[$field] = $_POST['callback_' . $field]; }
+    }
+    if (array_key_exists('callback_key', $_POST)) { $config['callback_key'] = $_POST['callback_key']; }
+    FreePBX::Qcallback()->setQueueCallbackConfig((string)$_POST['extdisplay'], $config);
+}
+
+function queuecallback_hook_core_reload() { qcallback_get_config('asterisk'); }
+function queuecallback_hook_core_configprocess() { qcallback_get_config('asterisk'); }
