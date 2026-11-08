@@ -87,4 +87,19 @@ confirm_expect(qcallback_return_confirmation_settings(['return_confirm_repeats'=
 $plan=qcallback_outbound_dialplan();preg_match('/\[queuecallback-agent-outbound\](.*?)(?=\n\[)/s',$plan,$agent);
 confirm_expect(str_contains($agent[1],'TtgrU(')&&strpos($agent[1],'Dial(')<strpos($agent[1],'Playback(custom/failed-to-confirm)')
     &&str_contains($agent[1],'${SHARED(QCB_CUSTOMER_CONFIRMED)}'),'Agent must remain after customer hangup and hear failure only if unconfirmed');
+$arm = strpos($agent[1], 'Set(BRIDGE_PLAY_SOUND=beep)');
+$dial = strpos($agent[1], 'Dial(');
+$clear = strpos($agent[1], 'Set(BRIDGE_PLAY_SOUND=)');
+confirm_expect($arm !== false && $clear !== false && $arm < $dial && $clear > $dial
+    && $clear < strpos($agent[1], 'Playback(custom/failed-to-confirm)'),
+    'Agent bridge beep must be armed before Dial and cleared before failure playback');
+confirm_expect(substr_count($plan, 'Set(BRIDGE_PLAY_SOUND=beep)') === 1
+    && !str_contains($plan, 'Set(_BRIDGE_PLAY_SOUND=') && !str_contains($plan, 'Set(__BRIDGE_PLAY_SOUND='),
+    'Connection beep must be confined to the agent channel, without inheritance');
+preg_match('/\[qcb-customer-confirm\](.*?)(?=\n\[)/s', $plan, $customer);
+confirm_expect(strpos($customer[1], 'Gosub(qcb-return-confirm,s,1)')
+    < strpos($customer[1], 'Set(GOSUB_RESULT=CONTINUE)')
+    && strpos($customer[1], 'Set(GOSUB_RESULT=CONTINUE)')
+    < strpos($customer[1], 'same => n(confirmed)'), 'Unconfirmed customers must exit Dial before any bridge tone');
+echo "PASS: agent-only connection beep is armed for the confirmed bridge and cleared on Dial return\n";
 echo "PASS: generated confirmation flow handles default/configured timeout and repeats, invalid digits, press 1, hangup, error, custom recordings and agent failure feedback\n";

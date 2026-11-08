@@ -8,7 +8,12 @@ Project: [tcreek/queue_callback_v17](https://github.com/tcreek/queue_callback_v1
 
 ## Status
 
-**Version 17.0.5.0 Beta 5. Updated November 7, 2026.**
+**Version 17.0.5.1 Beta 5.1. Updated November 8, 2026.**
+
+Beta 5.1 removes the second acceptance prompt after a caller confirms an
+alternate callback number. Detected caller ID requests keep their existing
+final confirmation. Scripted menu checks and PHP syntax checks pass; live-call
+verification of this fix remains pending.
 
 Beta 5 adds returned-call press-1 confirmation, configurable response timeout
 and prompt repeats, invalid-choice handling, agent failure feedback and new
@@ -167,7 +172,9 @@ callback records.
   play, the customer hears `custom/failed-to-confirm`. In agent-first mode the
   waiting agent also hears that recording when the customer fails to confirm,
   including no answer or a hangup before confirmation. A confirmed call does not
-  play the failure recording to the agent. Prompt repeats stay within one call
+  play the failure recording to the agent. When the confirmed customer and agent
+  are bridged, the agent hears a single standard beep to signal connection.
+  The beep is local to the agent channel. Prompt repeats stay within one call
   attempt; only after the attempt ends do the callback retry rules apply.
   A voicemail answer alone cannot complete the callback. The old
   `callback_returned` audio has been replaced; request-confirmation recordings
@@ -217,8 +224,8 @@ and [call-file retries and archives](https://docs.asterisk.org/Configuration/Int
   publishers use the same customer routing helper as the scheduled processor.
 - **Confirm Callback Number = No:** use the detected caller ID without initial
   request-confirmation prompts. **Yes:** read back the number, accept `1`, then
-  play the full **Callback Confirm Prompt** before accepting a fresh `1` to save
-  the request. Digits during the final prompt are ignored, preventing early or
+  for the detected caller ID play the full **Callback Confirm Prompt** before
+  accepting a fresh `1` to save the request. Digits during the final prompt are ignored, preventing early or
   duplicate input from cutting it short. The response timeout is five seconds
   after playback. A wrong final key, hangup, timeout or playback failure cancels.
   This setting controls the initial request; returned-call confirmation is separate.
@@ -226,7 +233,8 @@ and [call-file retries and archives](https://docs.asterisk.org/Configuration/Int
   entry. `0` is preserved as a real key. `1` is reserved for confirmation; **None**
   disables alternate entry. The callback request key and alternate-number key
   may be the same because they are used in separate menus. After alternate
-  entry, the new number is read back and must be confirmed before storing.
+  entry, the new number is read back. Pressing `1` accepts that number and saves
+  the request without a second confirmation prompt.
 - Match the confirmation recording's instructions to the configured alternate
   key. The single-digit menu disables the default `#` terminator; number entry
   still uses `#` to finish entering the number.
@@ -261,7 +269,8 @@ and unknown position. Position is diagnostic rather than the ordering key.
 The store AGI no longer invokes `queue show` through a shell.
 
 The AGI requires `QCB_CONFIRMED=1`. DTMF-authorized requests also require
-`QCB_CONFIRM_SOURCE=dtmf`, `CONFIRM2=1` and `READSTATUS=OK`. Detected-number requests
+`QCB_CONFIRM_SOURCE=dtmf`, `CONFIRM2=1` and `READSTATUS=OK`. For alternate-number
+requests, `CONFIRM2` carries the digit that accepted the entered number. Detected-number requests
 are accepted only if the enabled queue's saved `confirm_number` setting is `0`;
 a stale dialplan cannot bypass an enabled confirmation setting. Only an unset
 `CALLBACK_NUMBER` falls back to caller ID; an explicitly empty number is invalid.

@@ -2,6 +2,21 @@
 
 Project: [tcreek/queue_callback_v17](https://github.com/tcreek/queue_callback_v17/)
 
+## 17.0.5.1 Beta 5.1 — November 8, 2026
+
+- Accepting an entered alternate callback number with 1 now also confirms the
+  request, removing the second acceptance prompt. Detected caller ID requests
+  retain their existing final confirmation.
+- Add an agent-only connection beep when an agent-first callback bridges after
+  customer confirmation. Use the installed Asterisk beep and clear any pending
+  tone if Dial returns without a bridge. Live audio verification remains pending.
+- Update configuration help and add scripted checks for single acceptance,
+  cancellation, invalid choices, changing numbers and storage failures.
+- Validation: generated request-menu and return-call confirmation checks pass,
+  along with PHP syntax checks. The database-backed settings test was not
+  completed because database access was declined. Live-call verification of
+  this fix remains pending.
+
 ## 17.0.5.0 Beta 5 — November 7, 2026
 
 New beta version: `17.0.5.0 Beta 5`. Adds returned-call confirmation and includes
@@ -111,6 +126,6 @@ Complete and record these on the intended deployment before publishing stable:
   blocklist matches/scope and missing AGIs.
 - Periodic announcements, callback-key/IVR coexistence and unrelated queue routing.
 
-Version metadata is now `17.0.5.0 Beta 5`. No release package, GitHub tag or
+Current version metadata is `17.0.5.1 Beta 5.1`. No release package, GitHub tag or
 publication was created by this version update. Stable-release verification
 remains pending.

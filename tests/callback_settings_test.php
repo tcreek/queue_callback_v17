@@ -121,10 +121,19 @@ expect_setting(request_flow($config, ['1','AUDIO_ERROR'])['stored']===[], 'Missi
 $flow = request_flow($config, ['1', '1']);
 expect_setting($flow['stored'] === ['5551234567'] && $flow['reads'] === 2, 'Confirmation must require both choices');
 foreach (['0', '7', '*', '#'] as $key) {
-    $flow = request_flow(array_replace($config, ['alt_number_key' => $key]), [$key, '5557654321', '1', '1']);
-    expect_setting($flow['stored'] === ['5557654321'] && $flow['spoken'] === 2,
+    $flow = request_flow(array_replace($config, ['alt_number_key' => $key]), [$key, '5557654321', '1']);
+    expect_setting($flow['stored'] === ['5557654321'] && $flow['spoken'] === 2 && $flow['reads'] === 3
+        && !in_array('custom/confirm', $flow['played'], true)
+        && $flow['vars']['QCB_CONFIRMED'] === '1' && $flow['vars']['QCB_CONFIRM_SOURCE'] === 'dtmf'
+        && $flow['vars']['CONFIRM2'] === '1' && $flow['vars']['READSTATUS'] === 'OK',
         'Selected alternate key must enter and confirm the new number: ' . $key);
 }
+foreach (['', 'HANGUP'] as $input) {
+    expect_setting(request_flow($config, ['7', '5557654321', $input])['stored'] === [],
+        'Alternate number must not be stored without acceptance');
+}
+$flow = request_flow($config, ['7', '5557654321', '9', '7', '5551112222', '1']);
+expect_setting($flow['stored'] === ['5551112222'], 'Invalid choice or changing the alternate number must not store the previous number');
 $flow = request_flow(array_replace($config, ['callback_key' => '0']), ['1', '1']);
 expect_setting($flow['stored'] === ['5551234567'], 'Callback key 0 must remain usable');
 foreach ([[''], ['HANGUP'], ['1', ''], ['1', 'HANGUP']] as $digits) {
@@ -132,7 +141,7 @@ foreach ([[''], ['HANGUP'], ['1', ''], ['1', 'HANGUP']] as $digits) {
 }
 expect_setting(request_flow($config, ['9', '1', '1'])['stored'] === ['5551234567'], 'Invalid choice must replay without storing');
 expect_setting(request_flow(array_replace($config, ['alt_number_key' => '']), ['7', '1', '1'])['stored'] === ['5551234567'], 'None must disable alternate entry');
-expect_setting(request_flow($config, ['7', '*', '5557654321', '1', '1'])['stored'] === ['5557654321'], 'Empty filtered input must be requested again');
+expect_setting(request_flow($config, ['7', '*', '5557654321', '1'])['stored'] === ['5557654321'], 'Empty filtered input must be requested again');
 expect_setting(request_flow($config, [], false)['stored'] === [], 'Disabled queue must not store');
 expect_setting(strpos(qcallback_request_dialplan($config), 'include => ivr-4') !== false, 'Breakout IVR include lost');
 echo "PASS: generated menu flows honor confirmation, alternate keys, cancellation, invalid input and key 0\n";
@@ -147,11 +156,18 @@ foreach ([0, 1] as $confirm) {
 }
 $flow = request_flow($config, ['1', '1']);
 expect_setting(in_array('custom/received', $flow['played'], true), 'Saved request did not play success');
+foreach (['DB_ERROR', 'QUEUE_UNAVAILABLE', 'INVALID_NUMBER', 'MISSING'] as $storage) {
+    $flow = request_flow($config, ['7', '5557654321', '1'], true, $storage);
+    expect_setting(!$flow['stored'] && !in_array('custom/received', $flow['played'], true)
+        && in_array('an-error-has-occurred', $flow['played'], true), 'Alternate-number storage failure must not announce success');
+}
 $missingCheck = request_flow($config, [], null);
 expect_setting(!$missingCheck['stored'] && !in_array('custom/received', $missingCheck['played'], true),
     'Missing check AGI allowed callback storage');
 echo "PASS: storage failures and missing AGI take failure announcement path, never stale success\n";
 
+// Run generated-menu regression checks without bootstrapping the live PBX.
+if (in_array('--menu-only', $argv, true)) { exit(0); }
 
 require_once('/etc/freepbx.conf');
 $db = FreePBX::Database();

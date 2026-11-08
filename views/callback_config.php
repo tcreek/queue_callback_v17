@@ -298,7 +298,7 @@ try {
     </div>
     <div class="row">
         <div class="col-md-12">
-            <span id="callback_confirm_number-help" class="help-block fpbx-help-block"><?php echo _("When enabled, read back the number, then play the full callback-confirmation prompt and wait for a fresh press 1 before saving the request. Digits during the final prompt are ignored. A wrong final key, timeout or hangup cancels. When disabled, use the detected caller ID without these request prompts. Return-call confirmation is separate.") ?></span>
+            <span id="callback_confirm_number-help" class="help-block fpbx-help-block"><?php echo _("When enabled, read back the number for confirmation. Accepting an entered alternate number with 1 also saves the callback request. For the detected caller ID, the final callback-confirmation prompt still requires a fresh press 1; digits during that prompt are ignored. Timeout or hangup cancels. When disabled, use the detected caller ID without these request prompts. Return-call confirmation is separate.") ?></span>
         </div>
     </div>
 </div>
@@ -394,7 +394,7 @@ try {
     </div>
     <div class="row">
         <div class="col-md-12">
-            <span id="callback_confirm_prompt_id-help" class="help-block fpbx-help-block"><?php echo _("Required initial callback-request confirmation. The caller must press 1 before the request is saved or any callback is placed. This always plays even when number readback is disabled. Timeout, another key or hangup cancels. This is separate from return-call confirmation.") ?></span>
+            <span id="callback_confirm_prompt_id-help" class="help-block fpbx-help-block"><?php echo _("Final request confirmation for the detected caller ID when Confirm Callback Number is enabled. After this prompt finishes, the caller must press 1 to save. Accepting an entered alternate number already confirms the request, so this prompt is skipped. Timeout, another key or hangup cancels. Return-call confirmation is separate.") ?></span>
         </div>
     </div>
 </div>

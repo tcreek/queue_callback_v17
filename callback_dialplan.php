@@ -22,6 +22,7 @@ function qcallback_request_dialplan(array $c): string {
     $handler .= " same => n,Return()\n";
     $handler .= "exten => $ckey,1,Set(CALLBACK_NUMBER=\${CALLERID(num)})\n";
     $handler .= " same => n,Set(CALLBACK_QUEUE=$qid)\n";
+    $handler .= " same => n,Set(QCB_ALTERNATE_NUMBER=0)\n";
     $handler .= " same => n,Set(QCB_CONFIRMED=0)\n same => n,Set(QCB_CONFIRM_SOURCE=)\n same => n,Set(CONFIRM2=)\n";
     $handler .= " same => n,Set(QUEUE_CALLBACK_ENABLED=0)\n";
     $handler .= " same => n,Set(QUEUE_CALLBACK_KEY=)\n";
@@ -49,19 +50,22 @@ function qcallback_request_dialplan(array $c): string {
             $handler .= " same => n,GotoIf(\$[\"\${FILTER(0-9,\${ALTNUM})}\" != \"\${ALTNUM}\"]?alt,1)\n";
             $handler .= " same => n,Set(CALLBACK_NUMBER=\${ALTNUM})\n";
             $handler .= " same => n,GotoIf(\$[\"\${CALLBACK_NUMBER}\" = \"\"]?alt,1)\n";
+            $handler .= " same => n,Set(QCB_ALTERNATE_NUMBER=1)\n";
             $handler .= " same => n,Goto(confirm,1)\n";
         }
     }
-    // When enabled, finish the final prompt before accepting a fresh digit.
-    // Playback consumes early digits instead of letting a duplicate 1 skip it.
+    // Accepting an entered alternate number also authorizes that request.
+    // Detected-number requests still require a fresh digit after the final prompt.
     $prompt = ($c['confirm_prompt_file'] ?? '') ?: 'custom/callback_confirm';
     if ($confirm) {
-        $handler .= "exten => authorize,1,Set(CONFIRM2=)\n";
+        $handler .= "exten => authorize,1,Set(CONFIRM2=\${CONFIRM1})\n";
+        $handler .= " same => n,GotoIf(\$[\"\${QCB_ALTERNATE_NUMBER}\" = \"1\"]?validate)\n";
+        $handler .= " same => n,Set(CONFIRM2=)\n";
         $handler .= " same => n,Playback($prompt)\n";
         $handler .= " same => n,GotoIf(\$[\"\${PLAYBACKSTATUS}\" != \"SUCCESS\"]?cancel,1)\n";
         $handler .= " same => n,Set(CONFIRM2=)\n";
         $handler .= " same => n,Read(CONFIRM2,,1,nt(),1,5)\n";
-        $handler .= " same => n,GotoIf(\$[\"\${READSTATUS}\" != \"OK\"]?cancel,1)\n";
+        $handler .= " same => n(validate),GotoIf(\$[\"\${READSTATUS}\" != \"OK\"]?cancel,1)\n";
         $handler .= " same => n,GotoIf(\$[\"\${CONFIRM2}\" != \"1\"]?cancel,1)\n";
         $handler .= " same => n,Set(QCB_CONFIRMED=1)\n same => n,Set(QCB_CONFIRM_SOURCE=dtmf)\n same => n,Goto(store,1)\n";
     }
@@ -118,7 +122,10 @@ exten => s,1,NoOp(QCB agent answered callback ${CALLBACK_ID} attempt ${CALLBACK_
  same => n,Set(CALLERID(name)=Queue Callback)
  same => n,Wait(1)
  same => n,Playback(you-will-be-connected-to-a-customer)
+ ; Agent-only, non-inherited sound consumed when the confirmed call bridges.
+ same => n,Set(BRIDGE_PLAY_SOUND=beep)
  same => n,Dial(${CALLBACK_CUSTOMER_CHANNEL},30,TtgrU(qcb-customer-confirm^${CHANNEL}))
+ same => n,Set(BRIDGE_PLAY_SOUND=)
  same => n,GotoIf($["${SHARED(QCB_CUSTOMER_CONFIRMED)}" = "1"]?finished)
  same => n,Playback(custom/failed-to-confirm)
  same => n(finished),Hangup()

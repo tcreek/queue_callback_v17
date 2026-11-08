@@ -286,7 +286,7 @@ if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err)
                         <label class="col-sm-3 control-label qcb-field-label">
                             <?php echo _("Confirm Callback Number") ?>
                             <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" 
-                               title="<?php echo _("When enabled, read back the number, then play the full callback-confirmation prompt and wait for a fresh press 1 before saving the request. Digits during the final prompt are ignored. A wrong final key, timeout or hangup cancels. When disabled, use the detected caller ID without these request prompts. Return-call confirmation is separate.") ?>"></i>
+                               title="<?php echo _("When enabled, read back the number for confirmation. Accepting an entered alternate number with 1 also saves the callback request. For the detected caller ID, the final callback-confirmation prompt still requires a fresh press 1; digits during that prompt are ignored. Timeout or hangup cancels. When disabled, use the detected caller ID without these request prompts. Return-call confirmation is separate.") ?>"></i>
                         </label>
                         <div class="col-sm-9 qcb-field-control">
                             <select class="form-control" name="callback_confirm_number" id="callback_confirm_number" style="width: 300px;">
