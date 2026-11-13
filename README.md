@@ -8,11 +8,13 @@ Project: [tcreek/queue_callback_v17](https://github.com/tcreek/queue_callback_v1
 
 ## Status
 
-**Follow-up FIFO fix:** the working source now enforces a shared line for live
-callers and callbacks. This is an unreleased change after the tagged 17.1.0
-archive. See the Unreleased section in RELEASE_NOTES.md.
+**Version 17.1.1 — November 13, 2026.**
 
-**Version 17.1.0 — stable release, November 12, 2026.**
+This patch preserves a shared line for live callers and callbacks. Newer live
+callers wait behind older callbacks, including during retry cooldown. Returning
+customers keep their place behind older live callers, and a callback's virtual
+position is released when it connects. See the 17.1.1 release notes and the
+[verification record](RELEASE_READINESS.md) for coverage and limits.
 
 Includes customer-first and agent-first callbacks, returned-call confirmation,
 silent blocklist enforcement with Blocked reporting, and native FreePBX 17

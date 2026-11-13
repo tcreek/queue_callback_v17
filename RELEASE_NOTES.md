@@ -2,7 +2,7 @@
 
 Project: [tcreek/queue_callback_v17](https://github.com/tcreek/queue_callback_v17/)
 
-## Unreleased — strict shared FIFO
+## 17.1.1 — November 13, 2026
 
 - Enforce original queue order at the member pre-dial boundary so newer live
   callers wait behind older pending callbacks, including retry cooldown.
@@ -16,6 +16,13 @@ Project: [tcreek/queue_callback_v17](https://github.com/tcreek/queue_callback_v1
 - Tests: 19 automated invocations pass. Isolated real-Asterisk tests with only
   synthetic Local channels verify cooldown holds, cancellation releases, and the
   connected AGI releases a returning customer's position. No real phones called.
+
+### Upgrade from 17.1.0
+
+Back up FreePBX and module data, install `qcallback-17.1.1.tgz`, complete the
+module upgrade, then Apply Config. The additive migration preserves existing
+requests and adds the connection marker. Apply Config installs the FIFO guard
+for new queue entries; it does not recall already-ringing calls.
 
 ## 17.1.0 — November 12, 2026
 

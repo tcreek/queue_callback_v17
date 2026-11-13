@@ -106,3 +106,14 @@ This does not constitute a new real-phone multi-caller test.
 
 The 17.1.0 tag and archive are historical release artifacts. Package this
 follow-up commit under a new version when publishing the correction.
+
+
+## 17.1.1 preparation — November 13, 2026
+
+Version 17.1.1 packages the FIFO correction above. The remote README edit was
+merged before release preparation. Module metadata, README and release notes
+identify the patch version. The 17.1.0 tag and archives remain historical.
+
+Manifest coverage and the package payload/checksum were verified for 17.1.1.
+The functional evidence above applies to the unchanged FIFO implementation;
+this version update did not place additional phone calls or rerun live fixtures.

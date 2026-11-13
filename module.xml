@@ -2,7 +2,7 @@
 <module>
   <rawname>qcallback</rawname>
   <name>Queue Callback</name>
-  <version>17.1.0</version>
+  <version>17.1.1</version>
   <publisher>Community</publisher>
   <license>GPLv3+</license>
   <licenselink>https://www.gnu.org/licenses/gpl-3.0.html</licenselink>
@@ -19,6 +19,7 @@
   </description>
   <more-info>https://github.com/tcreek/queue_callback_v17/</more-info>
   <changelog>
+    * 17.1.1 - Preserve the shared order of live callers and callbacks, including callback retry cooldown; guard queue member offers, retain queue priorities and existing hooks, calculate returning-customer positions, and release virtual positions when connected. Add the FIFO AGI and connection-marker schema migration.
     * 17.1.0 - Stable release: verified callback modes and retries; silent blocklist enforcement with Blocked reporting; native FreePBX backup/restore; complete runtime packaging.
     * 17.0.5.1 Beta 5.1 - Accepting an alternate callback number also confirms and saves the request, removing the second acceptance prompt; add an agent-only beep when a confirmed agent-first call bridges; update configuration help and add menu regression coverage.
     * 17.0.5.0 Beta 5 - Add returned-call press-1 confirmation, configurable timeout and repeats, invalid-choice prompts and agent failure feedback; install new WAV, mu-law and A-law recordings; fix interrupted initial callback confirmation while preserving its on/off setting; default retries to one minute; improve form labels; harden dispatch, queue ordering/readiness, retries, routes, validation, blocklists, credentials and installation. Beta release; full stable-release verification remains pending.
