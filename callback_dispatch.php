@@ -54,7 +54,7 @@ function qcallback_dispatch_request($db, int $id, $module = null, ?callable $sta
         if ((int)$active->fetchColumn() > 0) { return $defer('QUEUE_CALLBACK_ACTIVE'); }
         $module = $module ?? FreePBX::Qcallback();
         if ($module->isNumberBlocked($callback['callback_number'], $callback['queue_id'])) {
-            $db->prepare("UPDATE queuecallback_requests SET status='cancelled', time_processed=?
+            $db->prepare("UPDATE queuecallback_requests SET status='blocked', time_processed=?
                 WHERE id=? AND status='pending'")->execute([$now, $id]);
             return $defer('BLOCKED');
         }

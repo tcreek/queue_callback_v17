@@ -122,6 +122,8 @@ if (($_POST['sec_action'] ?? '') === 'add_entry') {
         } catch (\Throwable $e) { $sec_err = $e->getMessage(); }
     }
 }
+require_once __DIR__ . '/../callback_security.php';
+
 if ($sec_msg) { echo '<div class="alert alert-success">' . htmlentities($sec_msg) . '</div>'; }
 if ($sec_err) { echo '<div class="alert alert-danger">' . htmlentities($sec_err) . '</div>'; }
 ?>

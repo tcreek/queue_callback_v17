@@ -31,6 +31,7 @@ require_once dirname(__DIR__).'/callback_dispatch.php';
 $pdo=FreePBX::Database();$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
 $pdo->exec("CREATE TEMPORARY TABLE queuecallback_security (id INT AUTO_INCREMENT PRIMARY KEY,pattern VARCHAR(20),description VARCHAR(100),
     area_code VARCHAR(10),queue_id VARCHAR(20),enabled INT,sort_order INT,created_at INT,updated_at INT)");
+$pdo->exec("CREATE TEMPORARY TABLE queuecallback_security_settings (id INT PRIMARY KEY, destination VARCHAR(255))");
 // Mutators call needreload(). Intercept only its legacy DB adapter so the test
 // never changes the running PBX's Apply Config flag.
 $originalDb=$GLOBALS['db'];
@@ -108,7 +109,7 @@ try {
     $result=qcallback_dispatch_request($pdo,1,$module,$provider);
     expect_security($result['reason']==='BLOCKED' && $stateCalls===0,'Matching rule not checked before readiness');
     $row=$pdo->query('SELECT * FROM queuecallback_requests WHERE id=1')->fetch(PDO::FETCH_ASSOC);
-    expect_security($row['status']==='cancelled' && (int)$row['attempts']===0 && (int)$row['time_processed']>0,'Blocked request consumed attempt or lacks timestamp');
+    expect_security($row['status']==='blocked' && (int)$row['attempts']===0 && (int)$row['time_processed']>0,'Blocked request consumed attempt or lacks timestamp');
     $pdo->exec("UPDATE queuecallback_requests SET status='pending',callback_number='5551234567'");
     $pdo->exec('DROP TEMPORARY TABLE queuecallback_security');
     // Shadow the real table with a deliberately broken schema to prove that
@@ -116,5 +117,5 @@ try {
     $pdo->exec('CREATE TEMPORARY TABLE queuecallback_security (id INT)');
     $result=qcallback_dispatch_request($pdo,1,$module,$provider);
     expect_security($result['reason']==='DISPATCH_ERROR' && $stateCalls===0,'Blocklist read failure allowed dispatch');
-    echo "PASS: invalid legacy rules/read failures defer; blocked requests cancel before AMI without an attempt\n";
+    echo "PASS: invalid legacy rules/read failures defer; blocked requests are marked blocked before AMI without an attempt\n";
 } finally {$GLOBALS['db']=$originalDb;}

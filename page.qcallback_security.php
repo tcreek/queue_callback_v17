@@ -7,6 +7,9 @@ $error = '';
 
 $qcallback = FreePBX::Qcallback();
 
+require_once __DIR__ . '/callback_security.php';
+
+
 switch ($action) {
     case 'add_entry':
         $pattern = trim($_POST['pattern'] ?? '');

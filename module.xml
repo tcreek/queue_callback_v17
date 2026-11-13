@@ -2,7 +2,7 @@
 <module>
   <rawname>qcallback</rawname>
   <name>Queue Callback</name>
-  <version>17.0.5.1 Beta 5.1</version>
+  <version>17.1.0</version>
   <publisher>Community</publisher>
   <license>GPLv3+</license>
   <licenselink>https://www.gnu.org/licenses/gpl-3.0.html</licenselink>
@@ -19,6 +19,7 @@
   </description>
   <more-info>https://github.com/tcreek/queue_callback_v17/</more-info>
   <changelog>
+    * 17.1.0 - Stable release: verified callback modes and retries; silent blocklist enforcement with Blocked reporting; native FreePBX backup/restore; complete runtime packaging.
     * 17.0.5.1 Beta 5.1 - Accepting an alternate callback number also confirms and saves the request, removing the second acceptance prompt; add an agent-only beep when a confirmed agent-first call bridges; update configuration help and add menu regression coverage.
     * 17.0.5.0 Beta 5 - Add returned-call press-1 confirmation, configurable timeout and repeats, invalid-choice prompts and agent failure feedback; install new WAV, mu-law and A-law recordings; fix interrupted initial callback confirmation while preserving its on/off setting; default retries to one minute; improve form labels; harden dispatch, queue ordering/readiness, retries, routes, validation, blocklists, credentials and installation. Beta release; full stable-release verification remains pending.
     * 17.0.4.6 Beta 4 - Force queue configuration reload for periodic announcements; preserve sound paths and resolve return recordings; fix customer-first callback routing and attach completion after customer answer; leave module files to FreePBX on uninstall; replace callback instruction WAV, mu-law and A-law audio; stop overwriting Queues announcement intervals
@@ -42,8 +43,11 @@
   <files>
     <file>README.md</file>
     <file>RELEASE_NOTES.md</file>
+    <file>RELEASE_READINESS.md</file>
     <file>LICENSE</file>
     <file>Qcallback.class.php</file>
+    <file>Backup.php</file>
+    <file>Restore.php</file>
     <file>functions.inc.php</file>
     <file>freepbx_menu.conf</file>
     <file>page.qcallback.php</file>
@@ -76,6 +80,27 @@
     <file>views/queue_callbacks.php</file>
     <file>views/cron.php</file>
     <file>views/bootnav.php</file>
+    <file>announcements/alternate_num_instruct.alaw</file>
+    <file>announcements/alternate_num_instruct.ulaw</file>
+    <file>announcements/alternate_num_instruct.wav</file>
+    <file>announcements/callback-announcement.alaw</file>
+    <file>announcements/callback-announcement.ulaw</file>
+    <file>announcements/callback-announcement.wav</file>
+    <file>announcements/callback-return-confirm.alaw</file>
+    <file>announcements/callback-return-confirm.ulaw</file>
+    <file>announcements/callback-return-confirm.wav</file>
+    <file>announcements/callback_confirm.alaw</file>
+    <file>announcements/callback_confirm.ulaw</file>
+    <file>announcements/callback_confirm.wav</file>
+    <file>announcements/callback_initiated.alaw</file>
+    <file>announcements/callback_initiated.ulaw</file>
+    <file>announcements/callback_initiated.wav</file>
+    <file>announcements/confirm_number.alaw</file>
+    <file>announcements/confirm_number.ulaw</file>
+    <file>announcements/confirm_number.wav</file>
+    <file>announcements/failed-to-confirm.alaw</file>
+    <file>announcements/failed-to-confirm.ulaw</file>
+    <file>announcements/failed-to-confirm.wav</file>
   </files>
 </module>
 

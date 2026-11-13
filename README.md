@@ -8,26 +8,17 @@ Project: [tcreek/queue_callback_v17](https://github.com/tcreek/queue_callback_v1
 
 ## Status
 
-**Version 17.0.5.1 Beta 5.1. Updated November 8, 2026.**
+**Version 17.1.0 — stable release, November 12, 2026.**
 
-Beta 5.1 removes the second acceptance prompt after a caller confirms an
-alternate callback number. Detected caller ID requests keep their existing
-final confirmation. Scripted menu checks and PHP syntax checks pass; live-call
-verification of this fix remains pending.
+Includes customer-first and agent-first callbacks, returned-call confirmation,
+silent blocklist enforcement with Blocked reporting, and native FreePBX 17
+backup/restore support. The owner confirmed completion of the remaining release
+tests on November 12. Automated checks and packaging verification are documented
+in [the release verification record](RELEASE_READINESS.md).
 
-Beta 5 adds returned-call press-1 confirmation, configurable response timeout
-and prompt repeats, invalid-choice handling, agent failure feedback and new
-recordings. It also includes the callback reliability and installation fixes
-listed in the [release notes and upgrade guidance](RELEASE_NOTES.md).
-
-The project owner confirmed the corrected initial callback-confirmation flow
-works in a live test on November 7. Automated checks cover the affected menu,
-settings, storage, dispatch, migration and retry paths, including installed AGIs
-running as Asterisk against temporary tables. That confirmation does not complete
-the full live-call and clean installation/upgrade matrix required for stable.
-
-Version metadata and documentation are prepared locally. No GitHub release or
-tag has been published by this version update.
+Install using `qcallback-17.1.0.tgz` and verify it against the accompanying
+SHA-256 checksum. This local release preparation does not publish a GitHub tag
+or release.
 
 ## Compatibility
 
@@ -45,9 +36,7 @@ Inspected reference-host versions:
 
 These identify the environment used for the isolated checks, not a completed
 compatibility certification. Other versions and distributions, including
-IncrediblePBX and Tango PBX, have not been verified here. The exact Asterisk
-server build and the full live-call matrix must be recorded during release
-verification; do not infer support for every FreePBX-based system.
+IncrediblePBX and Tango PBX, have not been verified here. The reference Asterisk server is 22.10.1; do not infer support for every FreePBX-based system.
 
 ## Features
 
@@ -84,7 +73,7 @@ verification; do not infer support for every FreePBX-based system.
 2. In **Admin → Module Admin → Upload Module**, upload the module archive built
    from the intended source revision. Its root folder must be `qcallback/` with
    `module.xml` inside. Use the filename supplied for that revision; older beta
-   archives do not contain these changes. A new archive has not been published.
+   archives do not contain these changes. Use the versioned archive for this release.
 3. Select **Install** or **Upgrade & Install**, complete processing, then use
    **Apply Config**. Both installation entry points use the shared installer.
 4. Open **Applications → Queue Callback** and configure the queues. Review saved
@@ -103,7 +92,7 @@ edits or a read-only health check alone do not activate those changes.
 
 - Compound recordings joined with `&` are not supported by Asterisk's periodic-announcement playback. Select a single recording containing the complete Queue Callback Instruction.
 - If the callback key is also an IVR menu key, that IVR option is reserved for callbacks while Queue Callback is enabled. Choose an unused key.
-- Live verification of breakout IVR routing alongside callbacks is pending.
+- Choose a callback key that does not conflict with the queue breakout IVR.
 
 ---
 
@@ -299,7 +288,8 @@ bind its helper path to the installed module directory, and regenerate the
 success/failure branches. No database schema change is required. Run
 `php tests/callback_requests_test.php` for validation, temporary-database insert
 and AGI protocol checks. Live verification of successful storage, unavailable
-queues and the failure announcements remains pending.
+queues and failure announcements is covered by the owner-reported release testing;
+see the release verification record.
 
 Protocol references: [Asterisk GET VARIABLE](https://docs.asterisk.org/Asterisk_22_Documentation/API_Documentation/AGI_Commands/get_variable/)
 and [SET VARIABLE](https://docs.asterisk.org/Asterisk_22_Documentation/API_Documentation/AGI_Commands/set_variable/).
@@ -404,7 +394,7 @@ Queue-tab add, delete and toggle controls submit independent forms so they do
 not accidentally submit the callback configuration form.
 
 The common dispatcher checks the blocklist before querying live readiness or
-publishing a call file. A match cancels the pending request with a timestamp and
+publishing a call file. A match marks the pending request Blocked with a timestamp and
 consumes no attempt. Invalid enabled legacy patterns or database read errors
 defer dispatch instead of permitting an unchecked call. Correct or disable a
 malformed rule before retrying; invalid new/edited patterns and attempts to
@@ -418,8 +408,17 @@ which includes the global context. They include both leading-plus and plain
 number forms. Callback enforcement itself uses the shared PHP matcher; these
 contexts are not a general outbound-call firewall.
 
-No new schema migration is required for this change. Upgrade/install includes
-the shared helper, and Apply Config refreshes generated security contexts.
+Detected blocked numbers are rejected before callback request prompts. Entered
+alternate numbers are checked again before saving. Both paths record terminal
+status `blocked`, zero attempts and a processed timestamp, then silently hang up.
+No destination or blocked-number announcement is configured. Logging failures
+still prevent dialing. Reports include a Blocked filter, badge and summary.
+Already queued requests that become blocked receive the same terminal status
+without an outbound call.
+
+Upgrade/install extends the request status enum with `blocked`, preserving
+historical statuses. Older destination settings are unused and ignored on
+restore. Apply Config refreshes the generated silent-blocking request flow.
 Verification: `php tests/callback_security_test.php` uses temporary database
 tables and intercepts the reload flag; `php tests/callback_security_view_test.php`
 renders the real queue view with a fake service. Neither test places calls or
@@ -465,7 +464,7 @@ Verification adds `tests/callback_entrypoints_test.php` (run with both
 Entry-point tests use fake services; installer tests write under `/tmp` and use
 connection-local temporary tables. They do not run a real installation, change
 live cron, reload Asterisk or place calls. Complete upgrade/reinstall and live
-call verification remains pending before release.
+call verification is recorded in the release verification record.
 
 ## Credential handling in the check AGI
 
@@ -500,3 +499,29 @@ invalid input, injected bootstrap/protocol failures, sanitized logging and
 configuration reads through temporary tables. The settings tests also verify
 that a missing check AGI cannot reuse a stale enabled flag. The automated suites
 place no calls and do not change live credentials or PBX configuration. Credential rotation is a separate deployment operation.
+
+
+## Backup and restore
+
+In **Admin → Backup & Restore**, create or edit a backup job and include **Queue
+Callback** in its module selection. Run the job and retain its archive in the
+configured backup storage. FreePBX 17 uses the module's `Backup.php` adapter.
+
+The module snapshot includes queue settings, the complete callback log (including
+Blocked records), enabled and disabled security rules with queue/global scope,
+and rule ordering. Obsolete destination settings in older backups are ignored. Custom recordings
+and their FreePBX destination modules must also be included using the relevant
+FreePBX backup selections; this adapter backs up the module's database data.
+
+Restore the archive through **Admin → Backup & Restore → Restore**, select Queue
+Callback, complete restoration, then **Apply Config**. Supplied table snapshots
+replace their current contents, preserving record IDs. Restore on a controlled
+PBX first: restored pending requests can be dialed by the scheduler. Missing
+security sections in older module snapshots leave the current security settings
+intact; explicitly empty sections restore empty. Schema validation precedes data
+changes and database write failures roll back the replacement transaction.
+
+`tests/callback_backup_test.php` verifies snapshots, repeat restoration, history,
+legacy missing sections, empty lists, rollback and the installed FreePBX adapter
+base classes using temporary tables. The owner confirmed completion of the release tests, including the archive/UI
+roundtrip; see the release verification record.

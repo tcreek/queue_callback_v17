@@ -9,6 +9,10 @@ class SecurityViewFixture {
     function deleteSecurityEntry($id) {$this->calls[]=['delete',$id];}
     function toggleSecurityEntry($id,$enabled) {$this->calls[]=['toggle',$id,$enabled];}
 }
+function drawselects($destination, $index) {
+    return '<select name="goto'.$index.'"><option selected value="Terminate_Call">Terminate Call</option></select>'
+        .'<select name="Terminate_Call'.$index.'"><option selected value="'.$destination.'">Hangup</option></select>';
+}
 class FreePBX {
     public static $module;
     static function Qcallback() {return self::$module;}
@@ -28,6 +32,7 @@ foreach (['add_entry'=>'add','update_entry'=>'update','delete_entry'=>'delete','
 render_security_view(['sec_action'=>'toggle_entry','id'=>'1']);
 expect_security_view(FreePBX::$module->calls[0]===['toggle',1,false],'Unchecked toggle did not disable');
 $html=render_security_view([]);
+expect_security_view(!str_contains($html, 'name="goto1000"'), 'Obsolete destination picker remains');
 $level=0;
 preg_match_all('~</?form\b[^>]*>~i',$html,$tags);
 foreach ($tags[0] as $tag) {

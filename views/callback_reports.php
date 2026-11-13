@@ -97,6 +97,7 @@ try {
                             <option value="processing" <?php echo $status_filter == 'processing' ? 'selected' : '' ?>><?php echo _("Processing") ?></option>
                             <option value="completed" <?php echo $status_filter == 'completed' ? 'selected' : '' ?>><?php echo _("Completed") ?></option>
                             <option value="failed" <?php echo $status_filter == 'failed' ? 'selected' : '' ?>><?php echo _("Failed") ?></option>
+                            <option value="blocked" <?php echo $status_filter == 'blocked' ? 'selected' : '' ?>><?php echo _("Blocked") ?></option>
                             <option value="cancelled" <?php echo $status_filter == 'cancelled' ? 'selected' : '' ?>><?php echo _("Cancelled") ?></option>
                         </select>
                     </div>
@@ -144,6 +145,7 @@ try {
                                                 'processing' => array('label' => 'info', 'icon' => 'spinner', 'text' => 'Processing'),
                                                 'completed' => array('label' => 'success', 'icon' => 'check', 'text' => 'Completed'),
                                                 'failed' => array('label' => 'danger', 'icon' => 'times', 'text' => 'Failed'),
+                                                'blocked' => array('label' => 'danger', 'icon' => 'ban', 'text' => 'Blocked'),
                                                 'cancelled' => array('label' => 'default', 'icon' => 'ban', 'text' => 'Cancelled'),
                                             );
                                             $st = $cb['status'];
@@ -181,6 +183,7 @@ try {
                         'completed' => _('Completed'),
                         'failed' => _('Failed'),
                         'cancelled' => _('Cancelled'),
+                        'blocked' => _('Blocked'),
                     );
                     foreach ($status_counts as $status => $count):
                         if (!empty($status) && isset($status_texts[$status])):

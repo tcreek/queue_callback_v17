@@ -94,6 +94,31 @@ function qcallback_create_request($db, array $request): array {
     }
 }
 
+/** A blocked audit record is terminal and must never become a pending callback. */
+function qcallback_log_blocked_request($db, array $request): ?string {
+    try {
+        $data = qcallback_validate_request($request);
+        $now = time();
+        $stmt = $db->prepare("INSERT INTO queuecallback_requests
+            (queue_id, caller_id, callback_number, status, time_requested, time_processed,
+             attempts, max_attempts, uniqueid, position, queue_joined_at, queue_priority)
+            VALUES (?, ?, ?, 'blocked', ?, ?, 0, 0, ?, ?, ?, ?)");
+        if (!$stmt->execute([$data['queue_id'], $data['caller_id'], $data['callback_number'], $now, $now,
+            $data['uniqueid'], $data['position'], $data['queue_joined_at'], $data['queue_priority']])) {
+            throw new RuntimeException('Blocked request logging failed');
+        }
+        $id = (string)$db->lastInsertId();
+        if ($stmt->rowCount() !== 1 || !ctype_digit($id) || (int)$id < 1) {
+            throw new RuntimeException('Blocked request logging returned no ID');
+        }
+        return $id;
+    } catch (Throwable $e) {
+        // Logging errors must never allow a callback or prevent silent blocking.
+        error_log('Queue Callback: blocked request could not be logged');
+        return null;
+    }
+}
+
 /**
  * $exchange sends one AGI command and returns its response. Keeping the transport
  * and DB factory injectable lets tests exercise the same code without live calls.
@@ -111,6 +136,7 @@ function qcallback_store_agi(array $env, callable $exchange, callable $database)
     };
     $result = qcallback_request_failure('AGI_ERROR');
     try {
+        $set('QCB_BLOCKED', '0');
         $set('QCB_STORE_SUCCESS', '0');
         $set('QCB_REQUEST_ID', '');
         $set('QCB_STORE_ERROR', 'AGI_ERROR');
@@ -140,8 +166,18 @@ function qcallback_store_agi(array $env, callable $exchange, callable $database)
                         $setting->execute([$data['queue_id']]);
                         $allowDetected = (string)$setting->fetchColumn() === '0';
                     }
-                    $result = $source === 'detected' && !$allowDetected
-                        ? qcallback_request_failure('NOT_CONFIRMED') : qcallback_create_request($db, $data);
+                    if ($source === 'detected' && !$allowDetected) {
+                        $result = qcallback_request_failure('NOT_CONFIRMED');
+                    } else {
+                        require_once __DIR__ . '/callback_security.php';
+                        if (qcallback_security_blocks_number($db, $data['callback_number'], $data['queue_id'])) {
+                            $set('QCB_BLOCKED', '1');
+                            $result = qcallback_request_failure('BLOCKED');
+                            $result['id'] = qcallback_log_blocked_request($db, $data);
+                        } else {
+                            $result = qcallback_create_request($db, $data);
+                        }
+                    }
                 } catch (Throwable $e) {
                     qcallback_log_request_error($e);
                     $result = qcallback_request_failure('DB_ERROR');
@@ -170,6 +206,7 @@ function qcallback_check_agi(array $env, callable $exchange, callable $database)
     };
     $result = ['enabled' => false, 'error' => 'AGI_ERROR'];
     try {
+        $set('QCB_BLOCKED', '0');
         $set('QUEUE_CALLBACK_ENABLED', '0');
         $set('QUEUE_CALLBACK_KEY', '');
         $set('QCB_CHECK_ERROR', 'AGI_ERROR');
@@ -193,6 +230,19 @@ function qcallback_check_agi(array $env, callable $exchange, callable $database)
                 } else {
                     $key = $config['callback_key'];
                     $result = ['enabled' => true, 'error' => ''];
+                    // Reject detected blocked numbers before any callback prompts.
+                    $caller = $env['agi_callerid'] ?? '';
+                    if (is_string($caller) && preg_match('/^\+?[0-9]{1,50}$/D', $caller)) {
+                        require_once __DIR__ . '/callback_security.php';
+                        if (qcallback_security_blocks_number($db, $caller, $queue)) {
+                            $set('QCB_BLOCKED', '1');
+                            $result = ['enabled' => false, 'error' => 'BLOCKED'];
+                            qcallback_log_blocked_request($db, [
+                                'queue_id'=>$queue, 'callback_number'=>$caller, 'caller_id'=>$caller,
+                                'uniqueid'=>$env['agi_uniqueid'] ?? '',
+                            ]);
+                        }
+                    }
                 }
             } catch (Throwable $e) {
                 qcallback_log_request_error($e);

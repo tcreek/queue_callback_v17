@@ -27,7 +27,9 @@ function qcallback_request_dialplan(array $c): string {
     $handler .= " same => n,Set(QUEUE_CALLBACK_ENABLED=0)\n";
     $handler .= " same => n,Set(QUEUE_CALLBACK_KEY=)\n";
     $handler .= " same => n,Set(QCB_CHECK_ERROR=AGI_ERROR)\n";
+    $handler .= " same => n,Set(QCB_BLOCKED=0)\n";
     $handler .= " same => n,AGI(queuecallback-check.agi)\n";
+    $handler .= " same => n,GotoIf(\$[\"\${QCB_BLOCKED}\" = \"1\"]?blocked,1)\n";
     $target = $confirm ? 'confirm' : 'store';
     $handler .= " same => n,GotoIf(\$[\"\${QUEUE_CALLBACK_ENABLED}\" = \"1\"]?$target,1:unavailable)\n";
     $handler .= " same => n(unavailable),Playback(im-sorry)\n same => n,Playback(goodbye)\n same => n,Hangup()\n";
@@ -78,10 +80,13 @@ function qcallback_request_dialplan(array $c): string {
     $handler .= " same => n,Set(QCB_STORE_SUCCESS=0)\n";
     $handler .= " same => n,Set(QCB_REQUEST_ID=)\n";
     $handler .= " same => n,Set(QCB_STORE_ERROR=AGI_ERROR)\n";
+    $handler .= " same => n,Set(QCB_BLOCKED=0)\n";
     $handler .= " same => n,AGI(queuecallback-store.agi)\n";
+    $handler .= " same => n,GotoIf(\$[\"\${QCB_BLOCKED}\" = \"1\"]?blocked,1)\n";
     $handler .= " same => n,GotoIf(\$[\"\${QCB_STORE_SUCCESS}\" != \"1\"]?store-failed,1)\n";
     $handler .= " same => n,Playback({$c['initiated_message_file']})\n";
     $handler .= " same => n,Playback(thank-you-for-calling)\n same => n,Playback(goodbye)\n same => n,Hangup()\n";
+    $handler .= "exten => blocked,1,Hangup()\n";
     $handler .= "exten => store-failed,1,Playback(im-sorry)\n";
     $handler .= " same => n,Playback(an-error-has-occurred)\n";
     $handler .= " same => n,Playback(please-try-call-later)\n same => n,Hangup()\n";

@@ -108,40 +108,69 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
         // FreePBX owns module files; keep them available after Uninstall.
     }
 
+    /** FreePBX Backup adapters and legacy callers share the same snapshot. */
     public function backup() {
-        $out = [
-            'queuecallback_config'   => [],
-            'queuecallback_requests' => []
-        ];
-        try {
-            $stmt = $this->db->query('SELECT * FROM queuecallback_config');
-            $out['queuecallback_config'] = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        } catch (\Throwable $e) {}
-
-        try {
-            $stmt = $this->db->query('SELECT * FROM queuecallback_requests WHERE status != "completed"');
-            $out['queuecallback_requests'] = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        } catch (\Throwable $e) {}
-
-        return $out;
+        $snapshot = [];
+        foreach (['queuecallback_config', 'queuecallback_requests', 'queuecallback_security'] as $table) {
+            $statement = $this->db->query("SELECT * FROM $table");
+            if ($statement === false) { throw new \RuntimeException("Cannot back up $table"); }
+            $snapshot[$table] = $statement->fetchAll(PDO::FETCH_ASSOC);
+        }
+        return $snapshot;
     }
 
+    /** Replace supplied snapshots atomically; missing legacy sections stay intact. */
     public function restore($backup) {
-        if (!empty($backup['queuecallback_config'])) {
-            foreach ($backup['queuecallback_config'] as $config) {
-                $this->setQueueCallbackConfig($config['queue_id'], $config);
+        if (!is_array($backup)) { throw new \InvalidArgumentException('Invalid callback backup'); }
+        $tables = ['queuecallback_config', 'queuecallback_requests', 'queuecallback_security'];
+        $prepared = [];
+        // Read metadata and validate before starting the replacement transaction.
+        foreach ($tables as $table) {
+            if (!array_key_exists($table, $backup)) { continue; }
+            if (!is_array($backup[$table])) { throw new \InvalidArgumentException("Invalid $table backup"); }
+            $columns = $this->db->query("SHOW COLUMNS FROM $table")->fetchAll(PDO::FETCH_COLUMN);
+            $prepared[$table] = [];
+            foreach ($backup[$table] as $row) {
+                if (!is_array($row) || !$row) { throw new \InvalidArgumentException("Invalid $table row"); }
+                // Ignore the obsolete per-rule destination from development builds.
+                if ($table === 'queuecallback_security') { unset($row['destination']); }
+                foreach (array_keys($row) as $column) {
+                    if (!in_array($column, $columns, true)) {
+                        throw new \InvalidArgumentException("Unknown column in $table backup");
+                    }
+                }
+                $prepared[$table][] = $row;
             }
         }
-        if (!empty($backup['queuecallback_requests'])) {
-            foreach ($backup['queuecallback_requests'] as $request) {
-                unset($request['id']);
-                $cols = array_keys($request);
-                $ph   = implode(',', array_fill(0, count($cols), '?'));
-                $sql  = 'INSERT INTO queuecallback_requests (' . implode(',', $cols) . ") VALUES ($ph)";
-                $stmt = $this->db->prepare($sql);
-                $stmt->execute(array_values($request));
+        $this->db->beginTransaction();
+        try {
+            foreach ($prepared as $table => $rows) {
+                $primary = $table === 'queuecallback_config' ? 'queue_id' : 'id';
+                $ids = $this->db->query("SELECT `$primary` FROM $table FOR UPDATE")->fetchAll(PDO::FETCH_COLUMN);
+                $restored = [];
+                foreach ($rows as $row) {
+                    if (!isset($row[$primary])) { throw new \InvalidArgumentException("Missing primary key in $table backup"); }
+                    if (isset($restored[(string)$row[$primary]])) { throw new \InvalidArgumentException("Duplicate primary key in $table backup"); }
+                    $restored[(string)$row[$primary]] = true;
+                    $names = implode(',', array_map(static fn($column) => '`' . $column . '`', array_keys($row)));
+                    $values = implode(',', array_fill(0, count($row), '?'));
+                    $updates = implode(',', array_map(static fn($column) => "`$column` = VALUES(`$column`)", array_keys($row)));
+                    $statement = $this->db->prepare("INSERT INTO $table ($names) VALUES ($values) ON DUPLICATE KEY UPDATE $updates");
+                    if (!$statement->execute(array_values($row))) { throw new \RuntimeException("Cannot restore $table row"); }
+                }
+                $delete = $this->db->prepare("DELETE FROM $table WHERE `$primary` = ?");
+                foreach ($ids as $id) {
+                    if (!isset($restored[(string)$id]) && !$delete->execute([$id])) {
+                        throw new \RuntimeException("Cannot restore $table");
+                    }
+                }
             }
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) { $this->db->rollBack(); }
+            throw $e;
         }
+        $this->flagNeedReload();
     }
 
     /**
@@ -705,6 +734,8 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
 
         $files = [
             'Qcallback.class.php',
+            'Backup.php',
+            'Restore.php',
             'functions.inc.php',
             'freepbx_menu.conf',
             'hooks.php',
@@ -713,6 +744,7 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
             'module.xml',
             'README.md',
             'RELEASE_NOTES.md',
+            'RELEASE_READINESS.md',
             'LICENSE',
             'page.qcallback.php',
             'page.qcallback_reports.php',
@@ -879,13 +911,14 @@ class Qcallback extends FreePBX_Helpers implements BMO { // NOTE: keep original 
                     SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) pending,
                     SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed,
                     SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed,
-                    SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) cancelled
+                    SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) cancelled,
+                    SUM(CASE WHEN status='blocked' THEN 1 ELSE 0 END) blocked
                 FROM queuecallback_requests
                 WHERE queue_id = ?";
         $st = $this->db->prepare($sql);
         $st->execute([$queue_id]);
         return $st->fetch(PDO::FETCH_ASSOC) ?: [
-            'total_requests'=>0,'pending'=>0,'completed'=>0,'failed'=>0,'cancelled'=>0
+            'total_requests'=>0,'pending'=>0,'completed'=>0,'failed'=>0,'cancelled'=>0,'blocked'=>0
         ];
     }
 

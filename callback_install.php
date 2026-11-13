@@ -11,6 +11,17 @@ function qcallback_upgrade_return_confirmation($db): void {
     }
 }
 
+/** Extend existing installations without changing historical request statuses. */
+function qcallback_upgrade_blocked_status($db): void {
+    $column = $db->query("SHOW COLUMNS FROM queuecallback_requests LIKE 'status'")->fetch(PDO::FETCH_ASSOC);
+    $type = $column['Type'] ?? '';
+    if (str_starts_with(strtolower($type), 'enum(') && !str_contains($type, "'blocked'")) {
+        $type = substr($type, 0, -1) . ",'blocked')";
+        $nullable = ($column['Null'] ?? 'YES') === 'YES' ? 'NULL' : 'NOT NULL';
+        $db->exec("ALTER TABLE queuecallback_requests MODIFY COLUMN status $type $nullable DEFAULT 'pending'");
+    }
+}
+
 function qcallback_install_schema($db): void {
     $db->exec("CREATE TABLE IF NOT EXISTS queuecallback_requests (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -19,7 +30,7 @@ function qcallback_install_schema($db): void {
                     callback_number VARCHAR(50) NOT NULL,
                     time_requested INT NOT NULL,
                     time_processed INT DEFAULT NULL,
-                    status ENUM('pending','processing','completed','failed','cancelled') DEFAULT 'pending',
+                    status ENUM('pending','processing','completed','failed','cancelled','blocked') DEFAULT 'pending',
                     attempts INT DEFAULT 0,
                     max_attempts INT DEFAULT 3,
                     last_attempt INT DEFAULT NULL,
@@ -71,6 +82,7 @@ function qcallback_install_schema($db): void {
     }
     $columns = $db->query('SHOW COLUMNS FROM queuecallback_security')->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array('queue_id', $columns, true)) { $db->exec("ALTER TABLE queuecallback_security ADD COLUMN queue_id VARCHAR(20) DEFAULT '' AFTER area_code"); }
+    qcallback_upgrade_blocked_status($db);
     qcallback_upgrade_queue_schema($db);
     qcallback_upgrade_return_confirmation($db);
 }

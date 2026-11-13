@@ -2,6 +2,36 @@
 
 Project: [tcreek/queue_callback_v17](https://github.com/tcreek/queue_callback_v17/)
 
+## 17.1.0 — November 12, 2026
+
+Stable release approved by the owner after confirming completion of the remaining
+release tests. See [release verification](RELEASE_READINESS.md).
+
+- Support customer-first and agent-first callback flows with returned-call press-1
+  confirmation, configurable retries and an agent-only connection beep.
+- Silently reject detected blocked numbers before callback request prompts and
+  check entered alternate numbers before saving. Log terminal Blocked records
+  with zero dialing attempts. Blocked numbers never become callback jobs; no
+  destination selector or blocked-number announcement is used.
+- Include Blocked labels, filtering and counts in Reports. Existing pending
+  requests that match the blocklist are marked Blocked before dialing.
+- Add native FreePBX 17 Backup/Restore adapters for queue settings, complete
+  request history and security rules. Preserve scope, enabled state, ordering
+  and IDs; support older missing sections and explicitly empty lists. Database
+  write failures roll back restoration. Obsolete destinations are ignored.
+- Include all runtime helpers, views, AGIs and 21 recordings in the manifest.
+- Validation: 18 automated invocations, syntax checks for 51 PHP/AGI files,
+  installed-AGI blocklist checks and release archive/checksum verification.
+
+### Upgrade from beta
+
+Back up FreePBX and module data, upload `qcallback-17.1.0.tgz` through Module
+Admin, complete Upgrade & Install, then Apply Config. Additive schema migrations
+preserve historical statuses and add Blocked reporting. Old blocklist destination
+settings are ignored. Include referenced custom recordings and destination
+modules in FreePBX backup jobs. Restore on a controlled PBX first because
+restored pending requests can resume dialing.
+
 ## 17.0.5.1 Beta 5.1 — November 8, 2026
 
 - Accepting an entered alternate callback number with 1 now also confirms the
@@ -126,6 +156,5 @@ Complete and record these on the intended deployment before publishing stable:
   blocklist matches/scope and missing AGIs.
 - Periodic announcements, callback-key/IVR coexistence and unrelated queue routing.
 
-Current version metadata is `17.0.5.1 Beta 5.1`. No release package, GitHub tag or
-publication was created by this version update. Stable-release verification
-remains pending.
+The beta-era gate above is retained as the test matrix. The owner confirmed
+completion for 17.1.0; see RELEASE_READINESS.md for the release record.
