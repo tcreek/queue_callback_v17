@@ -20,9 +20,7 @@ backup/restore support. The owner confirmed completion of the remaining release
 tests on November 12. Automated checks and packaging verification are documented
 in [the release verification record](RELEASE_READINESS.md).
 
-Install using `qcallback-17.1.0.tgz` and verify it against the accompanying
-SHA-256 checksum. This local release preparation does not publish a GitHub tag
-or release.
+
 
 ## Compatibility
 
