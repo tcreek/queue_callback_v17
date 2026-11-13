@@ -93,10 +93,10 @@ FIXTURE;
 <?php
 require_once '/var/www/html/admin/modules/qcallback/callback_requests.php';
 $db=qcallback_agi_database();
-$db->exec('CREATE TEMPORARY TABLE queuecallback_requests (id INT PRIMARY KEY,queue_id VARCHAR(50),status VARCHAR(20),attempts INT,max_attempts INT,last_attempt INT,time_processed INT NULL)');
+$db->exec('CREATE TEMPORARY TABLE queuecallback_requests (id INT PRIMARY KEY,queue_id VARCHAR(50),status VARCHAR(20),attempts INT,max_attempts INT,last_attempt INT,time_processed INT NULL,fifo_connected_at INT DEFAULT NULL)');
 $db->exec('CREATE TEMPORARY TABLE queuecallback_config (queue_id VARCHAR(50),enabled INT,max_attempts INT)');
 $db->exec("INSERT INTO queuecallback_config VALUES ('3007',1,3)");
-$db->exec("INSERT INTO queuecallback_requests VALUES (7001,'3007','processing',1,3,1,NULL)");
+$db->exec("INSERT INTO queuecallback_requests VALUES (7001,'3007','processing',1,3,1,NULL,NULL)");
 RESULT_FIXTURE;
         $code.="\nini_set('error_log',".var_export($log,true).");\n";
         $code.='register_shutdown_function(function() use($db){if($db->query("SELECT status FROM queuecallback_requests WHERE id=7001")->fetchColumn()!=='.var_export($expected,true).'){exit(1);}});';

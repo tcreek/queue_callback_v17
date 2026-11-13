@@ -4,7 +4,7 @@
 function qcallback_upgrade_queue_schema($db): void {
     $columns = $db->query('SHOW COLUMNS FROM queuecallback_requests')->fetchAll(PDO::FETCH_COLUMN);
     foreach (['queue_joined_at' => 'INT DEFAULT NULL', 'queue_priority' => 'INT NOT NULL DEFAULT 0',
-        'reserved_agent' => 'VARCHAR(64) DEFAULT NULL'] as $column => $definition) {
+        'reserved_agent' => 'VARCHAR(64) DEFAULT NULL', 'fifo_connected_at' => 'INT DEFAULT NULL'] as $column => $definition) {
         if (!in_array($column, $columns, true)) {
             $db->exec("ALTER TABLE queuecallback_requests ADD COLUMN $column $definition");
         }
@@ -120,6 +120,22 @@ function qcallback_read_queue_state(string $queue, $manager = null, ?callable $s
         if (!$ack || !$complete) { return null; }
         $snapshot = qcallback_queue_snapshot($events, $complete, $observed);
         if (!isset($snapshot['queues'][$queue])) { return null; }
+        // FIFO-aware queue entries publish their arrival stamp before joining Queue.
+        foreach ($snapshot['queues'][$queue]['entries'] as &$entry) {
+            $channel=$entry['Channel'] ?? '';
+            if (!is_string($channel) || !preg_match('~^[A-Za-z0-9_./@:+\-]+$~D',$channel)) {continue;}
+            $stampId=$action.'-stamp-'.$entry['Position'];
+            $send('GetVar',['ActionID'=>$stampId,'Channel'=>$channel,'Variable'=>'QCB_FIFO_JOINED_AT']);
+            $stamp=null;
+            while (microtime(true)<$deadline) {
+                $reply=$manager->wait_response(true,true);
+                if (!$reply) {return null;}
+                if (($reply['ActionID']??'')===$stampId) {$stamp=$reply;break;}
+            }
+            if (($stamp['Response']??'')!=='Success') {return null;}
+            if (($stamp['Value']??'')!=='') {$entry['joined_at']=qcallback_queue_int($stamp['Value'],1);}
+        }
+        unset($entry);
         // ready excludes inherited queue wrap-up too; QueueMember.Wrapuptime
         // alone is only the member override (zero means inherit).
         $readyId = $action . '-ready';
@@ -141,6 +157,27 @@ function qcallback_read_queue_state(string $queue, $manager = null, ?callable $s
     }
 }
 
+/** Use the same age/tie rule at dispatch and immediately before a live member offer. */
+function qcallback_callback_before_live(array $callback, array $entry): bool {
+    $priority = (int)($callback['queue_priority'] ?? 0);
+    $livePriority = (int)$entry['Priority'];
+    if ($priority !== $livePriority) {return $priority > $livePriority;}
+    $joined = (int)($callback['queue_joined_at'] ?? $callback['time_requested']);
+    if ($joined !== (int)$entry['joined_at']) {return $joined < (int)$entry['joined_at'];}
+    // Native unique IDs provide a stable tie-breaker for arrivals in the same second.
+    $pattern = '/^([A-Za-z0-9_-]*?)([0-9]+)\.([0-9]+)$/D';
+    if (preg_match($pattern,(string)($callback['uniqueid'] ?? ''),$a)
+        && preg_match($pattern,(string)($entry['Uniqueid'] ?? ''),$b) && $a[1] === $b[1]) {
+        foreach ([2,3] as $part) {
+            $left=ltrim($a[$part],'0') ?: '0';$right=ltrim($b[$part],'0') ?: '0';
+            $order = strlen($left) <=> strlen($right);
+            if (!$order) {$order=strcmp($left,$right);}
+            if ($order) {return $order < 0;}
+        }
+    }
+    return false; // Legacy/ambiguous ties consistently favor the live caller.
+}
+
 /** Return an idle member or a reason to defer without consuming an attempt. */
 function qcallback_queue_decision(array $callback, ?array $snapshot, array $reserved = [], ?int $now = null): array {
     $deny = function ($reason) { return ['ready' => false, 'reason' => $reason]; };
@@ -153,7 +190,7 @@ function qcallback_queue_decision(array $callback, ?array $snapshot, array $rese
     $priority = (int)($callback['queue_priority'] ?? 0);
     foreach ($queue['entries'] as $entry) {
         if (($callback['uniqueid'] ?? '') !== '' && $entry['Uniqueid'] === $callback['uniqueid']) { return $deny('ORIGINAL_CALL_PRESENT'); }
-        if ($entry['Priority'] > $priority || ($entry['Priority'] === $priority && $entry['joined_at'] <= $joined)) {
+        if (!qcallback_callback_before_live($callback,$entry)) {
             return $deny('LIVE_CALLER_AHEAD');
         }
     }

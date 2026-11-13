@@ -138,7 +138,7 @@ function qcallback_seed_security_entries($db, string $queue): void {
 /** Same source AGIs for every installer; normalize only line endings and module path. */
 function qcallback_install_agis(string $source, string $destination, string $moduleDir, ?array $owner = ['asterisk','asterisk']): void {
     if (!is_dir($destination) && !mkdir($destination, 0755, true)) { throw new RuntimeException('Cannot create AGI directory'); }
-    foreach (['queuecallback-store.agi','queuecallback-check.agi','queuecallback-complete.agi','queuecallback-result.agi'] as $name) {
+    foreach (['queuecallback-store.agi','queuecallback-check.agi','queuecallback-complete.agi','queuecallback-result.agi','queuecallback-fifo.agi'] as $name) {
         $data = file_get_contents($source . '/' . $name);
         if ($data === false) { throw new RuntimeException('Missing callback AGI: ' . $name); }
         $data = str_replace("\r\n", "\n", $data);

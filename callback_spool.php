@@ -73,7 +73,7 @@ function qcallback_publish_call($db, array $callback, string $content,
         $reservationSql = $reservation ? ', r.reserved_agent = ?' : '';
         $claim = $db->prepare("UPDATE queuecallback_requests r
             JOIN queuecallback_config c ON c.queue_id = r.queue_id
-            SET r.status = 'processing', r.attempts = r.attempts + 1, r.last_attempt = ? $reservationSql
+            SET r.status = 'processing', r.attempts = r.attempts + 1, r.fifo_connected_at = NULL, r.last_attempt = ? $reservationSql
             WHERE r.id = ? AND r.status = 'pending' AND c.enabled = 1
               AND r.attempts = ? AND r.last_attempt <=> ?
               AND r.attempts < COALESCE(c.max_attempts, r.max_attempts, 3)

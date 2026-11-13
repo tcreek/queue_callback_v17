@@ -87,3 +87,22 @@ approved stable promotion. Version metadata, README and release notes now use
 17.1.0. Automated checks and the archive are revalidated for the final source.
 This records acceptance on the reference deployment, not certification of all
 FreePBX distributions or every possible queue, route and agent configuration.
+
+
+## Post-release FIFO correction — November 12, 2026
+
+An ordering audit found that 17.1.0 preserved callback order but did not prevent
+newer live callers from taking an agent during an older callback's retry delay.
+The follow-up source change adds an outgoing-member Queue guard, consistent
+arrival/tie rules, original-position return insertion and a connection marker.
+
+Verification: all 19 automated invocations passed. Isolated real-Asterisk tests
+using only synthetic Local channels verified that a newer live caller remained
+on hold without ringing an agent during retry cooldown, proceeded after the
+older callback was cancelled, and released its virtual position through the
+returning-customer connected AGI. Fixtures were removed afterward. Queue 3007's
+loaded priority 1 was verified to call `qcb-fifo-entry` after explicit generation.
+This does not constitute a new real-phone multi-caller test.
+
+The 17.1.0 tag and archive are historical release artifacts. Package this
+follow-up commit under a new version when publishing the correction.

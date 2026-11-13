@@ -2,6 +2,21 @@
 
 Project: [tcreek/queue_callback_v17](https://github.com/tcreek/queue_callback_v17/)
 
+## Unreleased — strict shared FIFO
+
+- Enforce original queue order at the member pre-dial boundary so newer live
+  callers wait behind older pending callbacks, including retry cooldown.
+- Preserve queue priorities, consistent same-second ties, existing pre-dial
+  hooks, hold behavior and normal timeout/exit behavior. Disable single-offer
+  Queue exit for guarded queues so refused offers retry while callers hold.
+- Release the virtual position when a callback connects; retain it across failed
+  attempts and release terminal, blocked and exhausted requests.
+- Calculate returning-customer queue position behind older live callers. Add the
+  `fifo_connected_at` migration and deploy `queuecallback-fifo.agi` on upgrade.
+- Tests: 19 automated invocations pass. Isolated real-Asterisk tests with only
+  synthetic Local channels verify cooldown holds, cancellation releases, and the
+  connected AGI releases a returning customer's position. No real phones called.
+
 ## 17.1.0 — November 12, 2026
 
 Stable release approved by the owner after confirming completion of the remaining

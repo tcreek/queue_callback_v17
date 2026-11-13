@@ -85,6 +85,7 @@ try {
             '/\n\[qcb-route-[0-9]+\][\s\S]*?(?=\n\[|\z)/i',
             // defensive: older handler contexts
             '/\n\[qcb-complete\][\s\S]*?(?=\n\[|\z)/i',
+            '/\n\[qcb-fifo-(?:entry|member)\][\s\S]*?(?=\n\[|\z)/i',
             '/\n\[qcb-hangup\][\s\S]*?(?=\n\[|\z)/i',
             '/\n\[queuecallback-[^\]]+\][\s\S]*?(?=\n\[|\z)/i',
         ];
@@ -118,7 +119,8 @@ try {
         '/var/lib/asterisk/agi-bin/queuecallback-store.agi',
         '/var/lib/asterisk/agi-bin/queuecallback-check.agi',
         '/var/lib/asterisk/agi-bin/queuecallback-complete.agi',
-        '/var/lib/asterisk/agi-bin/queuecallback-result.agi'
+        '/var/lib/asterisk/agi-bin/queuecallback-result.agi',
+        '/var/lib/asterisk/agi-bin/queuecallback-fifo.agi'
     ];
     foreach ($agi as $f) {
         if (file_exists($f)) {

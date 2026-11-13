@@ -142,6 +142,7 @@ exten => s,1,NoOp(QCB confirm customer before bridging callback ${CALLBACK_ID})
  same => n,Set(GOSUB_RESULT=CONTINUE)
  same => n,Return()
  same => n(confirmed),Set(SHARED(QCB_CUSTOMER_CONFIRMED,${ARG1})=1)
+ same => n,AGI(queuecallback-fifo.agi,connected)
  same => n,Return()
 
 [qcb-return-confirm]
@@ -196,9 +197,32 @@ function qcallback_render_extensions(string $existing, array $configs, string $r
     // replace an administrator's entire from-internal-custom/ext-queues section.
     $existing = preg_replace('/^; (?:Queue Callback Module - Start|BEGIN QCALLBACK QUEUE ROUTES)[^\r\n]*\R[\s\S]*?^; (?:Queue Callback Module - End|END QCALLBACK QUEUE ROUTES)[^\r\n]*(?:\R|$)/m', '', $existing);
     $owned = 'queuecallback-(?:[0-9]+|exit-[0-9]+|outbound|agent-outbound|handler(?:-fixed)?)'
-        . '|qcb-(?:handler-[0-9]+|hangup|complete|customer-confirm|return-confirm|route-[0-9]+)';
+        . '|qcb-(?:fifo-entry|fifo-member|handler-[0-9]+|hangup|complete|customer-confirm|return-confirm|route-[0-9]+)';
     $existing = preg_replace('/^[ \t]*\[(?:' . $owned . ')\][^\r\n]*(?:\R|$)[\s\S]*?(?=^[ \t]*\[|\z)/m', '', $existing);
     $plan = rtrim($existing) . "\n";
     foreach ($configs as $config) { $plan .= qcallback_request_dialplan($config); }
-    return $plan . $routes . qcallback_outbound_dialplan() . qcallback_legacy_handler_dialplan($configs);
+    return $plan . qcallback_fifo_dialplan() . $routes . qcallback_outbound_dialplan() . qcallback_legacy_handler_dialplan($configs);
+}
+
+/** Callee-side Hangup aborts only the offered member leg; the caller stays on hold. */
+function qcallback_fifo_dialplan(): string {
+    return <<<'DIALPLAN'
+
+[qcb-fifo-entry]
+exten => s,1,Gosub(macro-user-callerid,s,1())
+ same => n,Set(QCB_FIFO_INITIALIZED=0)
+ same => n,AGI(queuecallback-fifo.agi,entry,${ARG1})
+ same => n,GotoIf($["${QCB_FIFO_INITIALIZED}" = "1"]?ready)
+ same => n,Hangup()
+ same => n(ready),Return()
+
+[qcb-fifo-member]
+exten => s,1,Set(QCB_FIFO_ALLOW=0)
+ same => n,AGI(queuecallback-fifo.agi,check)
+ same => n,GotoIf($["${QCB_FIFO_ALLOW}" = "1"]?ready)
+ same => n,Hangup(21)
+ same => n(ready),ExecIf($[${LEN(${QCB_FIFO_PREVIOUS_GOSUB})} > 0]?Gosub(${QCB_FIFO_PREVIOUS_GOSUB}))
+ same => n,Return()
+
+DIALPLAN;
 }

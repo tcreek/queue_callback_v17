@@ -1,0 +1,55 @@
+#!/usr/bin/php
+<?php
+/**
+ * Queue Callback Module for FreePBX
+ *
+ * Copyright (C) 2026 Trent Creekmore
+ * trent@netservisity.com
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/** Read callback settings through FreePBX and fail closed on any error. */
+$env = [];
+while (($line = fgets(STDIN)) !== false) {
+    $line = rtrim($line, "\r\n");
+    if ($line === '') { break; }
+    if (strpos($line, ':') !== false) {
+        [$key, $value] = explode(':', $line, 2);
+        $env[trim($key)] = ltrim($value, ' ');
+    }
+}
+$library = dirname(__DIR__) . '/callback_fifo.php';
+if (!is_file($library)) { $library = '/var/www/html/admin/modules/qcallback/callback_fifo.php'; }
+try {
+    if (!is_file($library)) {
+        // Custom web roots are discovered through FreePBX configuration.
+        global $amp_conf;
+        ob_start(static function ($output) { return ''; });
+        try { require_once '/etc/freepbx.conf'; } finally { ob_end_clean(); }
+        $library = ($amp_conf['AMPWEBROOT'] ?? '/var/www/html') . '/admin/modules/qcallback/callback_fifo.php';
+    }
+    require_once dirname($library) . '/callback_requests.php';
+    require_once $library;
+    qcallback_fifo_agi($env, function (string $command): string {
+        if (fwrite(STDOUT, $command . "\n") === false || !fflush(STDOUT)) {
+            throw new RuntimeException('AGI output closed');
+        }
+        $reply = fgets(STDIN);
+        if ($reply === false || rtrim($reply) === 'HANGUP') { throw new RuntimeException('AGI channel closed'); }
+        return rtrim($reply, "\r\n");
+    }, 'qcallback_agi_database');
+} catch (Throwable $e) {
+    error_log('Queue Callback: FIFO AGI could not initialize');
+}

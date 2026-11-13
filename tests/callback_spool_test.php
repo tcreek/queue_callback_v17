@@ -32,7 +32,7 @@ $db->setAttribute(PDO::ATTR_STATEMENT_CLASS, [SpoolTestStatement::class]);
 $db->exec("CREATE TEMPORARY TABLE queuecallback_requests (
     id INT PRIMARY KEY, queue_id VARCHAR(50), callback_number VARCHAR(50),
     status VARCHAR(20), attempts INT, last_attempt INT NULL, max_attempts INT,
-    time_requested INT DEFAULT 0)");
+    time_requested INT DEFAULT 0, fifo_connected_at INT DEFAULT NULL)");
 $db->exec("CREATE TEMPORARY TABLE queuecallback_config (
     queue_id VARCHAR(50) PRIMARY KEY, enabled INT, max_attempts INT,
     processing_interval INT DEFAULT 30, retry_interval INT DEFAULT 30)");

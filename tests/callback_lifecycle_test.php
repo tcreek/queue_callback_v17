@@ -42,9 +42,10 @@ $db->exec("CREATE TEMPORARY TABLE queuecallback_config (
 $queue = 'test-' . bin2hex(random_bytes(8));
 $db->prepare('INSERT INTO queuecallback_config VALUES (?, 1, 3, 30, 60)')->execute([$queue]);
 $now = time();
+$db->exec('ALTER TABLE queuecallback_requests ADD COLUMN fifo_connected_at INT DEFAULT NULL');
 $reset = function (string $status = 'processing', int $attempts = 1) use ($db, $queue, $now): array {
     $db->exec('DELETE FROM queuecallback_requests');
-    $db->prepare('INSERT INTO queuecallback_requests VALUES (1, ?, ?, ?, ?, ?, 3, ?, NULL)')
+    $db->prepare('INSERT INTO queuecallback_requests VALUES (1, ?, ?, ?, ?, ?, 3, ?, NULL, NULL)')
         ->execute([$queue, '5551234567', $status, $attempts, $now - 120, $now - 300]);
     return $db->query('SELECT * FROM queuecallback_requests WHERE id = 1')->fetch(PDO::FETCH_ASSOC);
 };

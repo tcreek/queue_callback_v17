@@ -64,12 +64,14 @@
     <file>callback_settings.php</file>
     <file>callback_requests.php</file>
     <file>callback_queue.php</file>
+    <file>callback_fifo.php</file>
     <file>callback_dispatch.php</file>
     <file>callback_security.php</file>
     <file>callback_install.php</file>
     <file>intelligent_callback_processor.php</file>
     <file>agi-bin/queuecallback-store.agi</file>
     <file>agi-bin/queuecallback-check.agi</file>
+    <file>agi-bin/queuecallback-fifo.agi</file>
     <file>agi-bin/queuecallback-complete.agi</file>
     <file>agi-bin/queuecallback-result.agi</file>
     <file>views/callback_form_style.php</file>

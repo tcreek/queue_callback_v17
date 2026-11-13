@@ -149,7 +149,7 @@ function qcallback_store_agi(array $env, callable $exchange, callable $database)
             try {
                 $data = qcallback_validate_request([
                     'queue_id' => $get('CALLBACK_QUEUE'),
-                    'queue_joined_at' => $get('QUEUEJOINTIME') ?: null,
+                    'queue_joined_at' => $get('QCB_FIFO_JOINED_AT') ?: ($get('QUEUEJOINTIME') ?: null),
                     'queue_priority' => $get('QUEUE_PRIO') ?? 0,
                     'position' => $get('QUEUEPOSITION') ?: null,
                     // Only an unset variable falls back to caller ID. An

@@ -8,6 +8,10 @@ Project: [tcreek/queue_callback_v17](https://github.com/tcreek/queue_callback_v1
 
 ## Status
 
+**Follow-up FIFO fix:** the working source now enforces a shared line for live
+callers and callbacks. This is an unreleased change after the tagged 17.1.0
+archive. See the Unreleased section in RELEASE_NOTES.md.
+
 **Version 17.1.0 — stable release, November 12, 2026.**
 
 Includes customer-first and agent-first callbacks, returned-call confirmation,
@@ -343,9 +347,8 @@ One callback may be processing per queue, and its chosen member capacity is
 reserved against other callback workers until the attempt ends. A member shared
 with another queue containing live callers is conservatively excluded. Agent-first
 uses the actual queue member interface, including Local channels, rather than
-assuming PJSIP. Customer-first returns with the recorded queue priority and
-`VQ_POSITION=1`, so callers of the same priority who arrived while the customer
-was being dialed do not move it to the tail. Higher-priority callers retain
+assuming PJSIP. Customer-first returns with the recorded queue priority and a
+position calculated from the original arrival time, behind older live callers. Higher-priority callers retain
 Asterisk's normal precedence.
 
 These checks use a dispatch-time snapshot. They cannot physically reserve an
@@ -366,6 +369,37 @@ fake AMI responses and a spool under `/tmp`; it places no calls. Also run the
 request, settings, spool and lifecycle regression tests. Implementation references:
 [Asterisk QueueStatus](https://docs.asterisk.org/Asterisk_22_Documentation/API_Documentation/AMI_Actions/QueueStatus/)
 and [Asterisk queue implementation](https://github.com/asterisk/asterisk/blob/22/apps/app_queue.c).
+
+
+### A shared line for live callers and callbacks
+
+Enabled queues install a callee pre-dial FIFO guard. Before any live caller can
+ring an agent, the guard checks pending and unconnected processing callbacks in
+that queue. An older callback keeps its turn even during retry cooldown. The
+newer caller remains in Asterisk Queue with normal hold music, announcements,
+DTMF exits and configured maximum wait. FIFO waiting therefore requires retries;
+the Queue option that exits after a single unsuccessful offer is disabled for
+callback-enabled queues.
+
+Older live callers continue ahead of callbacks. Queue entry stamps and native
+unique IDs resolve same-second arrivals consistently; ambiguous legacy ties favor
+live callers. Configured queue priority still takes precedence over arrival time.
+Returning customers are inserted behind older live callers rather than always
+being placed at position 1.
+
+Once an older callback connects to an agent, its virtual position is released so
+other available agents can serve the next callers. A failed attempt retains the
+original position. Completed, failed, cancelled, blocked and exhausted requests
+do not hold the line. Changes apply to new queue entries after Apply Config;
+already-ringing calls cannot be recalled by a pre-dial check.
+
+`tests/callback_fifo_test.php` covers mixed ordering, cooldown, connection release,
+return positions, prior hooks and failure handling using temporary tables.
+`tests/callback_fifo_engine_check.php --run-isolated-asterisk` is an explicit
+service-permission test using an isolated numeric queue and synthetic Local
+channels. It temporarily adds/removes fixtures and reloads Asterisk; it does not
+call real phones. Reference-host checks confirmed hold during cooldown, release
+after cancellation, and release through the returning-customer connected AGI.
 
 ## Callback blocklist patterns
 

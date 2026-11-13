@@ -9,7 +9,7 @@ try {
     $source=dirname(__DIR__).'/agi-bin';$destination=$root.'/agi';$modulePath="/tmp/test's qcallback";
     qcallback_install_agis($source,$destination,$modulePath,null);
     qcallback_install_agis($source,$destination,$modulePath,null);
-    foreach(['queuecallback-store.agi','queuecallback-check.agi','queuecallback-complete.agi','queuecallback-result.agi'] as $name){
+    foreach(['queuecallback-store.agi','queuecallback-check.agi','queuecallback-complete.agi','queuecallback-result.agi','queuecallback-fifo.agi'] as $name){
         $expected=str_replace("\r\n","\n",file_get_contents($source.'/'.$name));
         expect_install(file_get_contents($destination.'/'.$name)===$expected,'Installed AGI differs from packaged source: '.$name);
         expect_install((fileperms($destination.'/'.$name)&0777)===0755,'Wrong installed AGI permissions');
